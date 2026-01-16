@@ -1,0 +1,774 @@
+"""
+pipeline.py
+
+High-level pipeline functions for creating image search benchmarks.
+Provides both programmatic API and CLI interface.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import shutil
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
+from .preprocess import build_images_jsonl, build_seeds_jsonl
+from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
+from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
+from .scoring import SimilarityAdapterRegistry
+from .io import read_jsonl, write_jsonl
+from .vision import Vision, VisionAdapterRegistry
+from .judge import Judge, JudgeAdapterRegistry
+from .vision_types import VisionImage, VisionAnnotation
+from .judge_types import JudgeQuery, JudgeResult
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# -----------------------------
+# Programmatic API
+# -----------------------------
+
+
+def run_preprocess(
+    input_dir: Optional[Path] = None,
+    out_images_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    out_seeds_jsonl: Optional[Path] = None,
+    meta_json: Optional[Path] = None,
+    default_license: Optional[str] = None,
+    default_doi: Optional[str] = None,
+    follow_symlinks: bool = False,
+    limit: int = 0,
+    num_seeds: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Preprocess images directory into images.jsonl and optionally seeds.jsonl.
+    
+    Args:
+        input_dir: Input directory for images. If None, uses config.image_root_dir.
+        out_images_jsonl: Output images JSONL path. If None, uses config.images_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        out_seeds_jsonl: Output seeds JSONL path. If None, uses config.seeds_jsonl.
+        meta_json: Metadata JSON file path. If None, uses config.meta_json.
+        default_license: Default license string.
+        default_doi: Default DOI string.
+        follow_symlinks: Whether to follow symlinks.
+        limit: Limit number of images to process (0 = no limit).
+        num_seeds: Number of seeds. If None, uses config.num_seeds.
+    
+    Returns:
+        List of image rows written to images.jsonl.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Get paths from config if not provided
+    input_dir = Path(input_dir) if input_dir else (Path(config.image_root_dir) if config.image_root_dir else None)
+    out_images_jsonl = Path(out_images_jsonl) if out_images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
+    out_seeds_jsonl = Path(out_seeds_jsonl) if out_seeds_jsonl else (Path(config.seeds_jsonl) if config.seeds_jsonl else None)
+    meta_json = Path(meta_json) if meta_json else (Path(config.meta_json) if config.meta_json else None)
+    
+    if input_dir is None:
+        raise ValueError("input_dir must be provided or set in config.image_root_dir")
+    if out_images_jsonl is None:
+        raise ValueError("out_images_jsonl must be provided or set in config.images_jsonl")
+    
+    rows = build_images_jsonl(
+        input_dir=input_dir,
+        out_jsonl=out_images_jsonl,
+        image_base_url=config.image_base_url,
+        meta_json=meta_json,
+        default_license=default_license,
+        default_doi=default_doi,
+        follow_symlinks=follow_symlinks,
+        limit=limit,
+    )
+    
+    if out_seeds_jsonl:
+        num_seeds = num_seeds or config.num_seeds
+        build_seeds_jsonl(
+            rows=rows,
+            out_seeds_jsonl=out_seeds_jsonl,
+            num_seeds=num_seeds,
+            seed_prefix="query_",
+        )
+    
+    return rows
+
+
+def run_vision(
+    images_jsonl: Optional[Path] = None,
+    out_annotations_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    vision_adapter: Optional[Vision] = None,
+    adapter_name: Optional[str] = None,
+    batch_output_jsonl: Optional[Path] = None,
+    batch_error_jsonl: Optional[Path] = None,
+    wait_for_completion: bool = True,
+) -> List[VisionAnnotation]:
+    """
+    Run vision annotation pipeline: build batch, submit, wait, download, parse.
+    
+    Args:
+        images_jsonl: Input images JSONL path. If None, uses config.images_jsonl.
+        out_annotations_jsonl: Output annotations JSONL path. If None, uses config.annotations_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, will be created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        batch_output_jsonl: Optional batch output JSONL path.
+        batch_error_jsonl: Optional batch error JSONL path.
+        wait_for_completion: If True, wait for batch completion and download results.
+    
+    Returns:
+        List of VisionAnnotation objects.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Get paths from config if not provided
+    images_jsonl = Path(images_jsonl) if images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
+    out_annotations_jsonl = Path(out_annotations_jsonl) if out_annotations_jsonl else (Path(config.annotations_jsonl) if config.annotations_jsonl else None)
+    
+    if images_jsonl is None:
+        raise ValueError("images_jsonl must be provided or set in config.images_jsonl")
+    if out_annotations_jsonl is None:
+        raise ValueError("out_annotations_jsonl must be provided or set in config.annotations_jsonl")
+    
+    # Determine adapter name
+    if adapter_name is None:
+        adapter_name = config.vision_config.adapter
+    
+    # Get or create adapter
+    if vision_adapter is None:
+        vision_adapter = VisionAdapterRegistry.get(adapter_name, config=config)
+    
+    # Load images
+    images = []
+    for row in read_jsonl(images_jsonl):
+        images.append(VisionImage(
+            image_id=row[config.image_id_column],
+            image_url=row[config.image_url_column],
+            metadata={k: row.get(k) for k in config.metadata_columns if k in row},
+        ))
+    
+    # Get client from adapter
+    client = vision_adapter.get_client(config=config.vision_config)
+    if client is None:
+        logger.warning("Adapter returned None for client. Some adapters may not require a client.")
+    
+    # Submit batch
+    batch_output_jsonl = batch_output_jsonl or out_annotations_jsonl.parent / "vision_batch_output.jsonl"
+    batch_output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    batch_error_jsonl = batch_error_jsonl or out_annotations_jsonl.parent / "vision_batch_error.jsonl"
+    
+    batch_ref = vision_adapter.submit(
+        client=client,
+        images=images,
+        out_jsonl=batch_output_jsonl.parent / "vision_batch_input.jsonl",
+    )
+    
+    if wait_for_completion:
+        # Wait for batch completion using adapter method
+        vision_adapter.wait_for_batch(client, batch_ref)
+        
+        # Download results using adapter method
+        vision_adapter.download_batch_results(
+            client=client,
+            batch_ref=batch_ref,
+            output_path=batch_output_jsonl,
+            error_path=batch_error_jsonl,
+        )
+    
+    # Parse results
+    annotations = []
+    if batch_output_jsonl.exists():
+        for row in read_jsonl(batch_output_jsonl):
+            custom_id = row.get("custom_id", "")
+            if not custom_id.startswith("vision::"):
+                continue
+            image_id = custom_id.split("vision::", 1)[1]
+            error = row.get("error")
+            if error:
+                logger.warning(f"Vision request failed for {image_id}: {error}")
+                continue
+            
+            body = row.get("response", {}).get("body", {})
+            image = next((img for img in images if img.image_id == image_id), None)
+            if image:
+                ann = vision_adapter.parse_response(body, image)
+                annotations.append(ann)
+    
+    # Write annotations JSONL
+    rows_out = []
+    for ann in annotations:
+        row = {
+            config.image_id_column: ann.image_id,
+            **ann.fields,
+        }
+        if ann.tags:
+            row[config.tags_column or "tags"] = ann.tags
+        if ann.confidence:
+            row[config.confidence_column or "confidence"] = ann.confidence
+        if ann.metadata:
+            row.update(ann.metadata)
+        rows_out.append(row)
+    
+    write_jsonl(out_annotations_jsonl, rows_out)
+    return annotations
+
+
+def run_query_plan(
+    annotations_jsonl: Optional[Path] = None,
+    seeds_jsonl: Optional[Path] = None,
+    out_query_plan_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    neg_total: Optional[int] = None,
+    neg_hard: Optional[int] = None,
+    neg_nearmiss: Optional[int] = None,
+    neg_easy: Optional[int] = None,
+    random_seed: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build query plan from annotations and seeds.
+    
+    Args:
+        annotations_jsonl: Input annotations JSONL path. If None, uses config.annotations_jsonl.
+        seeds_jsonl: Input seeds JSONL path. If None, uses config.seeds_jsonl.
+        out_query_plan_jsonl: Output query plan JSONL path. If None, uses config.query_plan_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        neg_total: Total negatives. If None, uses config.query_plan_neg_total.
+        neg_hard: Hard negatives. If None, uses config.query_plan_neg_hard.
+        neg_nearmiss: Nearmiss negatives. If None, uses config.query_plan_neg_nearmiss.
+        neg_easy: Easy negatives. If None, uses config.query_plan_neg_easy.
+        random_seed: Random seed. If None, uses config.query_plan_random_seed.
+    
+    Returns:
+        List of query plan rows.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Get paths from config if not provided
+    annotations_jsonl = Path(annotations_jsonl) if annotations_jsonl else (Path(config.annotations_jsonl) if config.annotations_jsonl else None)
+    seeds_jsonl = Path(seeds_jsonl) if seeds_jsonl else (Path(config.seeds_jsonl) if config.seeds_jsonl else None)
+    out_query_plan_jsonl = Path(out_query_plan_jsonl) if out_query_plan_jsonl else (Path(config.query_plan_jsonl) if config.query_plan_jsonl else None)
+    
+    if annotations_jsonl is None:
+        raise ValueError("annotations_jsonl must be provided or set in config.annotations_jsonl")
+    if seeds_jsonl is None:
+        raise ValueError("seeds_jsonl must be provided or set in config.seeds_jsonl")
+    if out_query_plan_jsonl is None:
+        raise ValueError("out_query_plan_jsonl must be provided or set in config.query_plan_jsonl")
+    
+    annotations = load_annotations(annotations_jsonl, config)
+    strategy = TagOverlapQueryPlan(
+        neg_total=neg_total or config.query_plan_neg_total,
+        neg_hard=neg_hard or config.query_plan_neg_hard,
+        neg_nearmiss=neg_nearmiss or config.query_plan_neg_nearmiss,
+        neg_easy=neg_easy or config.query_plan_neg_easy,
+        random_seed=random_seed or config.query_plan_random_seed,
+    )
+    return build_query_plan(annotations, seeds_jsonl, strategy, out_query_plan_jsonl, config)
+
+
+def run_judge(
+    query_plan_jsonl: Optional[Path] = None,
+    annotations_jsonl: Optional[Path] = None,
+    out_qrels_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    judge_adapter: Optional[Judge] = None,
+    adapter_name: Optional[str] = None,
+    batch_output_jsonl: Optional[Path] = None,
+    batch_error_jsonl: Optional[Path] = None,
+    wait_for_completion: bool = True,
+) -> List[JudgeResult]:
+    """
+    Run judge pipeline: build batch, submit, wait, download, parse.
+    
+    Args:
+        query_plan_jsonl: Input query plan JSONL path. If None, uses config.query_plan_jsonl.
+        annotations_jsonl: Input annotations JSONL path. If None, uses config.annotations_jsonl.
+        out_qrels_jsonl: Output qrels JSONL path. If None, uses config.qrels_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, will be created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        batch_output_jsonl: Optional batch output JSONL path.
+        batch_error_jsonl: Optional batch error JSONL path.
+        wait_for_completion: If True, wait for batch completion and download results.
+    
+    Returns:
+        List of JudgeResult objects.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Get paths from config if not provided
+    query_plan_jsonl = Path(query_plan_jsonl) if query_plan_jsonl else (Path(config.query_plan_jsonl) if config.query_plan_jsonl else None)
+    annotations_jsonl = Path(annotations_jsonl) if annotations_jsonl else (Path(config.annotations_jsonl) if config.annotations_jsonl else None)
+    out_qrels_jsonl = Path(out_qrels_jsonl) if out_qrels_jsonl else (Path(config.qrels_jsonl) if config.qrels_jsonl else None)
+    
+    if query_plan_jsonl is None:
+        raise ValueError("query_plan_jsonl must be provided or set in config.query_plan_jsonl")
+    if annotations_jsonl is None:
+        raise ValueError("annotations_jsonl must be provided or set in config.annotations_jsonl")
+    if out_qrels_jsonl is None:
+        raise ValueError("out_qrels_jsonl must be provided or set in config.qrels_jsonl")
+    
+    # Determine adapter name
+    if adapter_name is None:
+        adapter_name = config.judge_config.adapter
+    
+    # Get or create adapter
+    if judge_adapter is None:
+        judge_adapter = JudgeAdapterRegistry.get(adapter_name, config=config)
+    
+    # Load annotations for seed/candidate data
+    ann_map = {}
+    for row in read_jsonl(annotations_jsonl):
+        ann_map[row[config.image_id_column]] = row
+    
+    # Load query plan and build queries
+    queries = []
+    for q_row in read_jsonl(query_plan_jsonl):
+        query_id = q_row[config.seed_query_id_column]
+        seed_ids = q_row[config.seed_image_ids_column]
+        cand_ids = q_row.get("candidate_image_ids", [])
+        
+        seed_images = []
+        for sid in seed_ids:
+            if sid in ann_map:
+                seed_images.append(ann_map[sid])
+        
+        candidate_images = []
+        for cid in cand_ids:
+            if cid in ann_map:
+                candidate_images.append(ann_map[cid])
+        
+        queries.append(JudgeQuery(
+            query_id=query_id,
+            seed_images=seed_images,
+            candidate_images=candidate_images,
+        ))
+    
+    # Get client from adapter
+    client = judge_adapter.get_client(config=config.judge_config)
+    if client is None:
+        logger.warning("Adapter returned None for client. Some adapters may not require a client.")
+    
+    # Submit batch
+    batch_output_jsonl = batch_output_jsonl or out_qrels_jsonl.parent / "judge_batch_output.jsonl"
+    batch_output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    batch_error_jsonl = batch_error_jsonl or out_qrels_jsonl.parent / "judge_batch_error.jsonl"
+    
+    batch_ref = judge_adapter.submit(
+        client=client,
+        queries=queries,
+        out_jsonl=batch_output_jsonl.parent / "judge_batch_input.jsonl",
+    )
+    
+    if wait_for_completion:
+        # Wait for batch completion using adapter method
+        judge_adapter.wait_for_batch(client, batch_ref)
+        
+        # Download results using adapter method
+        judge_adapter.download_batch_results(
+            client=client,
+            batch_ref=batch_ref,
+            output_path=batch_output_jsonl,
+            error_path=batch_error_jsonl,
+        )
+    
+    # Parse results
+    results = []
+    if batch_output_jsonl.exists():
+        for row in read_jsonl(batch_output_jsonl):
+            custom_id = row.get("custom_id", "")
+            if not custom_id.startswith("judge::"):
+                continue
+            query_id = custom_id.split("judge::", 1)[1]
+            error = row.get("error")
+            if error:
+                logger.warning(f"Judge request failed for {query_id}: {error}")
+                continue
+            
+            body = row.get("response", {}).get("body", {})
+            query = next((q for q in queries if q.query_id == query_id), None)
+            if query:
+                result = judge_adapter.parse_response(body, query)
+                results.append(result)
+    
+    # Write qrels JSONL
+    rows_out = []
+    for result in results:
+        for judgment in result.judgments:
+            row = {
+                config.query_id_column: result.query_id,
+                config.query_column: result.query_text,
+                config.image_id_column: judgment.image_id,
+                config.relevance_column: judgment.relevance_label,
+            }
+            # Add metadata from annotations
+            if judgment.image_id in ann_map:
+                ann = ann_map[judgment.image_id]
+                for col in config.metadata_columns:
+                    if col in ann:
+                        row[col] = ann[col]
+            rows_out.append(row)
+    
+    write_jsonl(out_qrels_jsonl, rows_out)
+    return results
+
+
+# -----------------------------
+# CLI Interface
+# -----------------------------
+
+
+def build_cli_parser() -> argparse.ArgumentParser:
+    """Build CLI argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Image Search Benchmark Maker Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Pipeline command")
+    
+    config_help = (
+        "Path to TOML or JSON config file. TOML is preferred (supports comments). "
+        "If not provided, uses DEFAULT_BENCHMARK_CONFIG. "
+        "Sensitive fields (starting with _) should be set via environment variables."
+    )
+    config_default = Path(os.getenv("IMSEARCH_BENCHMAKER_CONFIG")) if os.getenv("IMSEARCH_BENCHMAKER_CONFIG") else None
+    
+    # Preprocess
+    preprocess_parser = subparsers.add_parser("preprocess", help="Preprocess images directory")
+    preprocess_parser.add_argument("--input-dir", type=Path, help="Images directory (or use config.image_root_dir)")
+    preprocess_parser.add_argument("--out-images-jsonl", type=Path, help="Output images.jsonl (or use config.images_jsonl)")
+    preprocess_parser.add_argument("--out-seeds-jsonl", type=Path, help="Optional output seeds.jsonl (or use config.seeds_jsonl)")
+    preprocess_parser.add_argument("--meta-json", type=Path, help="Metadata JSON file (or use config.meta_json)")
+    preprocess_parser.add_argument("--license", help="Default license")
+    preprocess_parser.add_argument("--doi", help="Default DOI")
+    preprocess_parser.add_argument("--num-seeds", type=int, help="Number of seeds")
+    preprocess_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Vision
+    vision_parser = subparsers.add_parser("vision", help="Run vision annotation pipeline")
+    vision_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
+    vision_parser.add_argument("--out-annotations-jsonl", type=Path, help="Output annotations.jsonl (or use config.annotations_jsonl)")
+    vision_parser.add_argument("--adapter", help="Vision adapter name (overrides config)")
+    vision_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Query plan
+    plan_parser = subparsers.add_parser("plan", help="Build query plan")
+    plan_parser.add_argument("--annotations-jsonl", type=Path, help="Input annotations.jsonl (or use config.annotations_jsonl)")
+    plan_parser.add_argument("--seeds-jsonl", type=Path, help="Input seeds.jsonl (or use config.seeds_jsonl)")
+    plan_parser.add_argument("--out-query-plan-jsonl", type=Path, help="Output query_plan.jsonl (or use config.query_plan_jsonl)")
+    plan_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Judge
+    judge_parser = subparsers.add_parser("judge", help="Run judge pipeline")
+    judge_parser.add_argument("--query-plan-jsonl", type=Path, help="Input query_plan.jsonl (or use config.query_plan_jsonl)")
+    judge_parser.add_argument("--annotations-jsonl", type=Path, help="Input annotations.jsonl (or use config.annotations_jsonl)")
+    judge_parser.add_argument("--out-qrels-jsonl", type=Path, help="Output qrels.jsonl (or use config.qrels_jsonl)")
+    judge_parser.add_argument("--adapter", help="Judge adapter name (overrides config)")
+    judge_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Postprocess
+    postprocess_parser = subparsers.add_parser("postprocess", help="Postprocess qrels")
+    postprocess_subparsers = postprocess_parser.add_subparsers(dest="postprocess_cmd", required=True)
+    
+    similarity_parser = postprocess_subparsers.add_parser("similarity", help="Calculate similarity score")
+    similarity_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_jsonl)")
+    similarity_parser.add_argument("--output-jsonl", type=Path, help="Output qrels with score (or use config.qrels_with_score_jsonl)")
+    similarity_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
+    similarity_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    summary_parser = postprocess_subparsers.add_parser("summary", help="Generate dataset summary")
+    summary_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
+    summary_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.summary_output_dir)")
+    summary_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl)")
+    summary_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    huggingface_parser = postprocess_subparsers.add_parser("upload", help="Upload dataset to Hugging Face")
+    huggingface_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
+    huggingface_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.hf_dataset_dir)")
+    huggingface_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl, required if not using --image-root-dir)")
+    huggingface_parser.add_argument("--image-root-dir", type=Path, help="Optional local image root directory (or use config.image_root_dir, alternative to --images-jsonl)")
+    huggingface_parser.add_argument("--progress-interval", type=int, default=100, help="Progress update interval")
+    huggingface_parser.add_argument("--repo-id", help="Hugging Face repo ID (overrides config)")
+    huggingface_parser.add_argument("--token", help="Hugging Face token (overrides config)")
+    huggingface_parser.add_argument("--private", action="store_true", help="Make repository private (overrides config). If not set, uses config value.")
+    huggingface_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Clean
+    clean_parser = subparsers.add_parser("clean", help="Remove intermediate and output files")
+    clean_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    clean_parser.add_argument("--intermediate-only", action="store_true", help="Only remove intermediate files (keep final outputs)")
+    clean_parser.add_argument("--include-batch-files", action="store_true", default=True, help="Remove batch input/output/error files (default: True)")
+    clean_parser.add_argument("--include-final-outputs", action="store_true", help="Also remove final outputs (qrels_with_score_jsonl, summary, hf_dataset)")
+    
+    return parser
+
+def run_clean(
+    config: Optional[BenchmarkConfig] = None,
+    intermediate_only: bool = False,
+    include_batch_files: bool = True,
+    include_final_outputs: bool = False,
+) -> None:
+    """
+    Remove intermediate and output files created during the benchmark pipeline.
+    
+    Args:
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        intermediate_only: If True, only remove intermediate files (keep final outputs).
+        include_batch_files: If True, remove batch input/output/error files.
+        include_final_outputs: If True, also remove final outputs (qrels_with_score_jsonl, summary, hf_dataset).
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    removed_files = []
+    removed_dirs = []
+    
+    # Intermediate files to remove
+    intermediate_paths = []
+    if config.annotations_jsonl:
+        intermediate_paths.append(Path(config.annotations_jsonl))
+    if config.query_plan_jsonl:
+        intermediate_paths.append(Path(config.query_plan_jsonl))
+    if config.qrels_jsonl:
+        intermediate_paths.append(Path(config.qrels_jsonl))
+    
+    # Final outputs (only if include_final_outputs is True)
+    final_paths = []
+    if include_final_outputs and not intermediate_only:
+        if config.qrels_with_score_jsonl:
+            final_paths.append(Path(config.qrels_with_score_jsonl))
+        if config.summary_output_dir:
+            final_paths.append(Path(config.summary_output_dir))
+        if config.hf_dataset_dir:
+            final_paths.append(Path(config.hf_dataset_dir))
+    
+    # Remove intermediate files
+    for path in intermediate_paths:
+        if path and path.exists():
+            if path.is_file():
+                path.unlink()
+                removed_files.append(str(path))
+            elif path.is_dir():
+                shutil.rmtree(path)
+                removed_dirs.append(str(path))
+    
+    # Remove final outputs if requested
+    for path in final_paths:
+        if path and path.exists():
+            if path.is_file():
+                path.unlink()
+                removed_files.append(str(path))
+            elif path.is_dir():
+                shutil.rmtree(path)
+                removed_dirs.append(str(path))
+    
+    # Remove batch files if requested
+    if include_batch_files:
+        # Vision batch files (in annotations_jsonl parent directory)
+        if config.annotations_jsonl:
+            annotations_dir = Path(config.annotations_jsonl).parent
+            batch_patterns = [
+                "vision_batch_input.jsonl",
+                "vision_batch_output.jsonl",
+                "vision_batch_error.jsonl",
+                "vision_batch_input.jsonl.retry",
+                "vision_batch_output.jsonl.retry",
+                "vision_batch_error.jsonl.retry",
+            ]
+            for pattern in batch_patterns:
+                batch_file = annotations_dir / pattern
+                if batch_file.exists():
+                    batch_file.unlink()
+                    removed_files.append(str(batch_file))
+        
+        # Judge batch files (in qrels_jsonl parent directory)
+        if config.qrels_jsonl:
+            qrels_dir = Path(config.qrels_jsonl).parent
+            batch_patterns = [
+                "judge_batch_input.jsonl",
+                "judge_batch_output.jsonl",
+                "judge_batch_error.jsonl",
+                "judge_batch_input.jsonl.retry",
+                "judge_batch_output.jsonl.retry",
+                "judge_batch_error.jsonl.retry",
+            ]
+            for pattern in batch_patterns:
+                batch_file = qrels_dir / pattern
+                if batch_file.exists():
+                    batch_file.unlink()
+                    removed_files.append(str(batch_file))
+        
+        # Batch ID files (common locations)
+        common_dirs = []
+        if config.annotations_jsonl:
+            common_dirs.append(Path(config.annotations_jsonl).parent)
+        if config.qrels_jsonl:
+            common_dirs.append(Path(config.qrels_jsonl).parent)
+        if config.query_plan_jsonl:
+            common_dirs.append(Path(config.query_plan_jsonl).parent)
+        
+        batch_id_patterns = [
+            ".vision_batch_id",
+            ".vision_retry_batch_id",
+            ".judge_batch_id",
+            ".judge_retry_batch_id",
+        ]
+        
+        for common_dir in set(common_dirs):  # Use set to avoid duplicates
+            for pattern in batch_id_patterns:
+                batch_id_file = common_dir / pattern
+                if batch_id_file.exists():
+                    batch_id_file.unlink()
+                    removed_files.append(str(batch_id_file))
+    
+    # Report results
+    if removed_files or removed_dirs:
+        if removed_files:
+            logger.info(f"Removed {len(removed_files)} file(s):")
+            for f in removed_files:
+                logger.info(f"  - {f}")
+        if removed_dirs:
+            logger.info(f"Removed {len(removed_dirs)} directory/directories):")
+            for d in removed_dirs:
+                logger.info(f"  - {d}")
+        logger.info("✅ Cleanup complete!")
+    else:
+        logger.info("✅ No files to clean (or paths not set in config)")
+
+def main() -> None:
+    """CLI entry point."""
+    parser = build_cli_parser()
+    args = parser.parse_args()
+    
+    # Load config from file if provided, otherwise use default
+    config = DEFAULT_BENCHMARK_CONFIG
+    if hasattr(args, "config") and args.config:
+        try:
+            # from_file() automatically detects format and loads config
+            config = BenchmarkConfig.from_file(args.config)
+        except Exception as e:
+            logger.error(f"Failed to load config from {args.config}: {e}")
+            raise
+    
+    if args.command == "preprocess":
+        run_preprocess(
+            input_dir=getattr(args, "input_dir", None),
+            out_images_jsonl=getattr(args, "out_images_jsonl", None),
+            config=config,
+            out_seeds_jsonl=getattr(args, "out_seeds_jsonl", None),
+            meta_json=getattr(args, "meta_json", None),
+            default_license=getattr(args, "license", None),
+            default_doi=getattr(args, "doi", None),
+            num_seeds=getattr(args, "num_seeds", None),
+        )
+        output_path = getattr(args, "out_images_jsonl", None) or config.images_jsonl
+        logger.info(f"✅ Preprocess complete -> {output_path}")
+    
+    elif args.command == "vision":
+        adapter_name = getattr(args, "adapter", None) or config.vision_config.adapter
+        run_vision(
+            images_jsonl=getattr(args, "images_jsonl", None),
+            out_annotations_jsonl=getattr(args, "out_annotations_jsonl", None),
+            config=config,
+            adapter_name=adapter_name,
+        )
+        output_path = getattr(args, "out_annotations_jsonl", None) or config.annotations_jsonl
+        logger.info(f"✅ Vision complete -> {output_path}")
+    
+    elif args.command == "plan":
+        run_query_plan(
+            annotations_jsonl=getattr(args, "annotations_jsonl", None),
+            seeds_jsonl=getattr(args, "seeds_jsonl", None),
+            out_query_plan_jsonl=getattr(args, "out_query_plan_jsonl", None),
+            config=config,
+        )
+        output_path = getattr(args, "out_query_plan_jsonl", None) or config.query_plan_jsonl
+        logger.info(f"✅ Query plan complete -> {output_path}")
+    
+    elif args.command == "judge":
+        adapter_name = getattr(args, "adapter", None) or config.judge_config.adapter
+        run_judge(
+            query_plan_jsonl=getattr(args, "query_plan_jsonl", None),
+            annotations_jsonl=getattr(args, "annotations_jsonl", None),
+            out_qrels_jsonl=getattr(args, "out_qrels_jsonl", None),
+            config=config,
+            adapter_name=adapter_name,
+        )
+        output_path = getattr(args, "out_qrels_jsonl", None) or config.qrels_jsonl
+        logger.info(f"✅ Judge complete -> {output_path}")
+    
+    elif args.command == "postprocess":
+        if args.postprocess_cmd == "similarity":
+            # Get adapter name from config or use default
+            adapter_name = config.similarity_config.adapter
+            if not adapter_name:
+                available_adapters = SimilarityAdapterRegistry.list_adapters()
+                logger.warning(
+                    f"No similarity adapter specified in config. Available adapters: {', '.join(available_adapters)}. "
+                    f"Using first available adapter: {available_adapters[0] if available_adapters else 'none'}"
+                )
+                adapter_name = available_adapters[0] if available_adapters else None
+            
+            # Get column name from config
+            col_name = config.similarity_config.col_name or "similarity_score"
+            
+            calculate_similarity_score(
+                qrels_path=getattr(args, "qrels_jsonl", None),
+                output_path=getattr(args, "output_jsonl", None),
+                col_name=col_name,
+                adapter_name=adapter_name,
+                images_jsonl_path=getattr(args, "images_jsonl", None),
+                config=config,
+            )
+            output_path = getattr(args, "output_jsonl", None) or config.qrels_with_score_jsonl
+            logger.info(f"✅ Similarity score calculation complete -> {output_path}")
+        elif args.postprocess_cmd == "summary":
+            generate_dataset_summary(
+                qrels_path=getattr(args, "qrels_jsonl", None),
+                output_dir=getattr(args, "output_dir", None),
+                images_jsonl_path=getattr(args, "images_jsonl", None),
+                config=config,
+            )
+            output_path = getattr(args, "output_dir", None) or config.summary_output_dir
+            logger.info(f"✅ Summary complete -> {output_path}")
+        elif args.postprocess_cmd == "upload":
+            # Handle private flag: if --private is set, use True; otherwise None (will use config)
+            private_value = args.private if args.private else None
+            
+            huggingface(
+                qrels_path=getattr(args, "qrels_jsonl", None),
+                output_dir=getattr(args, "output_dir", None),
+                images_jsonl_path=getattr(args, "images_jsonl", None),
+                image_root_dir=getattr(args, "image_root_dir", None),
+                progress_interval=getattr(args, "progress_interval", 100),
+                repo_id=getattr(args, "repo_id", None),
+                token=getattr(args, "token", None),
+                private=private_value,
+                config=config,
+            )
+            output_path = getattr(args, "output_dir", None) or config.hf_dataset_dir
+            logger.info(f"✅ Hugging Face upload complete -> {output_path}")
+    
+    elif args.command == "clean":
+        run_clean(
+            config=config,
+            intermediate_only=getattr(args, "intermediate_only", False),
+            include_batch_files=getattr(args, "include_batch_files", True),
+            include_final_outputs=getattr(args, "include_final_outputs", False),
+        )
+
+
+if __name__ == "__main__":
+    main()
+

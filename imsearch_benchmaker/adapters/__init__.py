@@ -1,0 +1,5 @@
+"""
+Adapters for specific providers.
+"""
+
+
