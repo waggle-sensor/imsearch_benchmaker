@@ -40,21 +40,21 @@ class OpenAIJudge(Judge):
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                config.query_column: {"type": "string"},
+                config.column_query: {"type": "string"},
                 "judgments": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
                         "properties": {
-                            config.image_id_column: {"type": "string"},
-                            config.relevance_column: {"type": "integer", "enum": [0, 1]},
+                            config.column_image_id: {"type": "string"},
+                            config.column_relevance: {"type": "integer", "enum": [0, 1]},
                         },
-                        "required": [config.image_id_column, config.relevance_column],
+                        "required": [config.column_image_id, config.column_relevance],
                     },
                 },
             },
-            "required": [config.query_column, "judgments"],
+            "required": [config.column_query, "judgments"],
         }
 
     def __init__(

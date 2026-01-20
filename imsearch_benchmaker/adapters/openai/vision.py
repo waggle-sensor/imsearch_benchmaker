@@ -47,12 +47,12 @@ class OpenAIVision(Vision):
         
         # Add taxonomy columns
         # These are categorical fields with enum values
-        for col, values in config.taxonomy_columns.items():
+        for col, values in config.columns_taxonomy.items():
             properties[col] = {"type": "string", "enum": values}
             required.append(col)
         
         # Add boolean columns
-        for col in config.boolean_columns:
+        for col in config.columns_boolean:
             properties[col] = {"type": "boolean"}
             required.append(col)
         
@@ -65,8 +65,8 @@ class OpenAIVision(Vision):
             required.append("tags")
         
         # Add confidence object if we have taxonomy columns
-        if config.taxonomy_columns:
-            for col, values in config.taxonomy_columns.items():
+        if config.columns_taxonomy:
+            for col, values in config.columns_taxonomy.items():
                 confidence_properties[col] = {
                     "type": "number",
                     "minimum": 0,
@@ -75,8 +75,8 @@ class OpenAIVision(Vision):
                 confidence_required.append(col)
         
         # Add confidence object if we have boolean columns
-        if config.boolean_columns:
-            for col in config.boolean_columns:
+        if config.columns_boolean:
+            for col in config.columns_boolean:
                 confidence_properties[col] = {
                     "type": "number",
                     "minimum": 0,

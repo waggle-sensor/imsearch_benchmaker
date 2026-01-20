@@ -31,7 +31,7 @@ def read_jsonl_list(path: Path) -> List[Dict[str, Any]]:
 
 
 def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    available_categorical = [col for col in config.taxonomy_columns if col in df.columns]
+    available_categorical = [col for col in config.columns_taxonomy if col in df.columns]
     if not available_categorical:
         return
 
@@ -50,8 +50,8 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
         col_idx = idx % n_cols
         ax = axes[row, col_idx] if n_rows > 1 or n_cols > 1 else axes[idx]
 
-        if config.image_id_column in df.columns:
-            image_counts = df.groupby(col)[config.image_id_column].nunique().sort_values(ascending=False)
+        if config.column_image_id in df.columns:
+            image_counts = df.groupby(col)[config.column_image_id].nunique().sort_values(ascending=False)
         else:
             image_counts = df[col].value_counts()
 
@@ -125,10 +125,10 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
 
 
 def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if config.query_id_column not in df.columns or config.relevance_column not in df.columns:
+    if config.column_query_id not in df.columns or config.column_relevance not in df.columns:
         return
 
-    query_relevance = df.groupby(config.query_id_column)[config.relevance_column].agg(["sum", "count"]).reset_index()
+    query_relevance = df.groupby(config.column_query_id)[config.column_relevance].agg(["sum", "count"]).reset_index()
     query_relevance["relevance_rate"] = query_relevance["sum"] / query_relevance["count"]
     query_relevance = query_relevance.sort_values("relevance_rate", ascending=False)
 
@@ -155,8 +155,8 @@ def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, co
 
 
 def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if config.summary_column and config.summary_column in df.columns:
-        summaries = df[config.summary_column].dropna().astype(str).tolist()
+    if config.column_summary and config.column_summary in df.columns:
+        summaries = df[config.column_summary].dropna().astype(str).tolist()
         if summaries:
             text = " ".join(summaries)
             text = re.sub(r"[^\w\s]", "", text.lower())
@@ -171,9 +171,9 @@ def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkCon
             plt.savefig(output_dir / "wordcloud_summaries.png", dpi=300, bbox_inches="tight")
             plt.close()
 
-    if config.tags_column and config.tags_column in df.columns:
+    if config.column_tags and config.column_tags in df.columns:
         all_tags = []
-        for tags in df[config.tags_column].dropna():
+        for tags in df[config.column_tags].dropna():
             if isinstance(tags, list):
                 all_tags.extend([str(tag).lower() for tag in tags])
             elif isinstance(tags, str):
@@ -201,11 +201,11 @@ def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkCon
 
 
 def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if config.relevance_column not in df.columns:
+    if config.column_relevance not in df.columns:
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    rel_counts = df[config.relevance_column].value_counts()
+    rel_counts = df[config.column_relevance].value_counts()
     axes[0].pie(rel_counts.values, labels=[f"Not Relevant ({rel_counts.get(0, 0)})",
                                            f"Relevant ({rel_counts.get(1, 0)})"],
                 autopct="%1.1f%%", startangle=90, colors=["#ff9999", "#66b3ff"])
@@ -223,12 +223,12 @@ def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: Benc
 
 
 def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if config.relevance_column not in df.columns:
+    if config.column_relevance not in df.columns:
         return
 
-    for col in config.taxonomy_columns:
+    for col in config.columns_taxonomy:
         if col in df.columns:
-            crosstab = pd.crosstab(df[col], df[config.relevance_column], normalize="index") * 100
+            crosstab = pd.crosstab(df[col], df[config.column_relevance], normalize="index") * 100
             fig, ax = plt.subplots(figsize=(12, 6))
             crosstab.plot(kind="bar", ax=ax, color=["#ff9999", "#66b3ff"], stacked=True)
             ax.set_title(f"Relevance Distribution by {col}", fontsize=14, fontweight="bold")
@@ -242,10 +242,10 @@ def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config
 
 
 def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if config.query_column not in df.columns:
+    if config.column_query not in df.columns:
         return
 
-    df["query_text_length"] = df[config.query_column].astype(str).str.len()
+    df["query_text_length"] = df[config.column_query].astype(str).str.len()
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.hist(df["query_text_length"].dropna(), bins=30, color="steelblue", edgecolor="black")
     ax.set_title("Distribution of Query Text Length", fontsize=14, fontweight="bold")
@@ -263,14 +263,14 @@ def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, 
 def generate_summary_statistics(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     stats = {
         "Total Qrel Rows": len(df),
-        "Unique Queries": df[config.query_id_column].nunique() if config.query_id_column in df.columns else "N/A",
-        "Unique Images": df[config.image_id_column].nunique() if config.image_id_column in df.columns else "N/A",
-        "Relevant Pairs": int(df[config.relevance_column].sum()) if config.relevance_column in df.columns else "N/A",
-        "Not Relevant Pairs": int((df[config.relevance_column] == 0).sum()) if config.relevance_column in df.columns else "N/A",
-        "Relevance Rate": f"{(df[config.relevance_column].mean() * 100):.2f}%" if config.relevance_column in df.columns else "N/A",
+        "Unique Queries": df[config.column_query_id].nunique() if config.column_query_id in df.columns else "N/A",
+        "Unique Images": df[config.column_image_id].nunique() if config.column_image_id in df.columns else "N/A",
+        "Relevant Pairs": int(df[config.column_relevance].sum()) if config.column_relevance in df.columns else "N/A",
+        "Not Relevant Pairs": int((df[config.column_relevance] == 0).sum()) if config.column_relevance in df.columns else "N/A",
+        "Relevance Rate": f"{(df[config.column_relevance].mean() * 100):.2f}%" if config.column_relevance in df.columns else "N/A",
     }
 
-    for col in config.taxonomy_columns:
+    for col in config.columns_taxonomy:
         if col in df.columns:
             stats[f"Unique {col} values"] = df[col].nunique()
 
@@ -285,26 +285,26 @@ def generate_random_image_sample(
     config: Optional[BenchmarkConfig] = None,
 ) -> None:
     config = config or DEFAULT_BENCHMARK_CONFIG
-    if config.image_id_column not in df.columns:
+    if config.column_image_id not in df.columns:
         return
 
     image_url_map: Dict[str, str] = {}
     if images_jsonl_path and images_jsonl_path.exists():
         images_data = read_jsonl_list(images_jsonl_path)
         for img_row in images_data:
-            img_id = img_row.get(config.image_id_column)
-            img_url = img_row.get(config.image_url_column)
+            img_id = img_row.get(config.column_image_id)
+            img_url = img_row.get(config.column_image_url)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
-    elif config.image_url_column in df.columns:
-        cols = [config.image_id_column, config.image_url_column]
-        for _, row in df[cols].drop_duplicates(subset=[config.image_id_column]).iterrows():
-            image_url_map[row[config.image_id_column]] = row[config.image_url_column]
+    elif config.column_image_url in df.columns:
+        cols = [config.column_image_id, config.column_image_url]
+        for _, row in df[cols].drop_duplicates(subset=[config.column_image_id]).iterrows():
+            image_url_map[row[config.column_image_id]] = row[config.column_image_url]
 
     if not image_url_map:
         return
 
-    unique_images = df[config.image_id_column].unique()
+    unique_images = df[config.column_image_id].unique()
     available_images = [img_id for img_id in unique_images if img_id in image_url_map]
     sample_size = min(50, len(available_images))
     np.random.seed(42)
@@ -374,9 +374,9 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
     axes[0, 0].legend()
     axes[0, 0].grid(axis="y", alpha=0.3)
 
-    if config.relevance_column in clipscore_df.columns:
-        relevant_scores = clipscore_df[clipscore_df[config.relevance_column] == 1]["clip_score"].dropna()
-        not_relevant_scores = clipscore_df[clipscore_df[config.relevance_column] == 0]["clip_score"].dropna()
+    if config.column_relevance in clipscore_df.columns:
+        relevant_scores = clipscore_df[clipscore_df[config.column_relevance] == 1]["clip_score"].dropna()
+        not_relevant_scores = clipscore_df[clipscore_df[config.column_relevance] == 0]["clip_score"].dropna()
         box_data = [not_relevant_scores, relevant_scores]
         box_labels = ["Not Relevant (0)", "Relevant (1)"]
         bp = axes[0, 1].boxplot(box_data, tick_labels=box_labels, patch_artist=True)
@@ -395,8 +395,8 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
                         ha="center", va="center", transform=axes[0, 1].transAxes)
         axes[0, 1].set_title("CLIP Score Distribution by Relevance", fontsize=14, fontweight="bold")
 
-    if config.relevance_column in clipscore_df.columns:
-        clipscore_df["relevance_label_str"] = clipscore_df[config.relevance_column].map({0: "Not Relevant", 1: "Relevant"})
+    if config.column_relevance in clipscore_df.columns:
+        clipscore_df["relevance_label_str"] = clipscore_df[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
         sns.violinplot(data=clipscore_df, x="relevance_label_str", y="clip_score", ax=axes[1, 0],
                        hue="relevance_label_str", palette=["#ff9999", "#66b3ff"], legend=False)
         axes[1, 0].set_title("CLIP Score Distribution (Violin Plot)", fontsize=14, fontweight="bold")
@@ -421,11 +421,11 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
     plt.savefig(output_dir / "clipscore_analysis.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-    if config.relevance_column in clipscore_df.columns:
-        stats_by_relevance = clipscore_df.groupby(config.relevance_column)["clip_score"].agg(
+    if config.column_relevance in clipscore_df.columns:
+        stats_by_relevance = clipscore_df.groupby(config.column_relevance)["clip_score"].agg(
             ["count", "mean", "median", "std", "min", "max"]
         ).reset_index()
-        stats_by_relevance[config.relevance_column] = stats_by_relevance[config.relevance_column].map({0: "Not Relevant", 1: "Relevant"})
+        stats_by_relevance[config.column_relevance] = stats_by_relevance[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
         stats_by_relevance.columns = ["Relevance Label", "Count", "Mean", "Median", "Std Dev", "Min", "Max"]
         stats_by_relevance.to_csv(output_dir / "clipscore_stats_by_relevance.csv", index=False)
 
@@ -440,9 +440,9 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
         "75th Percentile": f"{clipscore_df['clip_score'].quantile(0.75):.4f}",
     }
 
-    if config.relevance_column in clipscore_df.columns:
-        relevant_df = clipscore_df[clipscore_df[config.relevance_column] == 1]
-        not_relevant_df = clipscore_df[clipscore_df[config.relevance_column] == 0]
+    if config.column_relevance in clipscore_df.columns:
+        relevant_df = clipscore_df[clipscore_df[config.column_relevance] == 1]
+        not_relevant_df = clipscore_df[clipscore_df[config.column_relevance] == 0]
         if len(relevant_df) > 0:
             overall_stats["Mean CLIP Score (Relevant)"] = f"{relevant_df['clip_score'].mean():.4f}"
         if len(not_relevant_df) > 0:
@@ -451,8 +451,8 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
     stats_df = pd.DataFrame(list(overall_stats.items()), columns=["Metric", "Value"])
     stats_df.to_csv(output_dir / "clipscore_overall_stats.csv", index=False)
 
-    if config.query_id_column in clipscore_df.columns:
-        query_clipscore_stats = clipscore_df.groupby(config.query_id_column)["clip_score"].agg(["mean", "std", "count"]).reset_index()
+    if config.column_query_id in clipscore_df.columns:
+        query_clipscore_stats = clipscore_df.groupby(config.column_query_id)["clip_score"].agg(["mean", "std", "count"]).reset_index()
         query_clipscore_stats.columns = ["Query ID", "Mean CLIP Score", "Std Dev", "Count"]
         query_clipscore_stats = query_clipscore_stats.sort_values("Mean CLIP Score", ascending=False)
         fig, ax = plt.subplots(figsize=(14, 8))
@@ -468,16 +468,16 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
 
 
 def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if not config.confidence_column or config.confidence_column not in df.columns:
+    if not config.column_confidence or config.column_confidence not in df.columns:
         return
 
-    confidence_df = df[df[config.confidence_column].notna()].copy()
+    confidence_df = df[df[config.column_confidence].notna()].copy()
     if len(confidence_df) == 0:
         return
 
     confidence_data = []
     for idx, row in confidence_df.iterrows():
-        conf = row[config.confidence_column]
+        conf = row[config.column_confidence]
         if isinstance(conf, str):
             try:
                 conf = json.loads(conf)
@@ -570,11 +570,11 @@ def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: Ben
     category_stats = category_stats.sort_values("Mean", ascending=False)
     category_stats.to_csv(output_dir / "confidence_stats_by_category.csv", index=False)
 
-    if config.relevance_column in confidence_df.columns:
+    if config.column_relevance in confidence_df.columns:
         conf_with_relevance = []
         for _, row in confidence_df.iterrows():
-            conf = row[config.confidence_column]
-            relevance = row[config.relevance_column]
+            conf = row[config.column_confidence]
+            relevance = row[config.column_relevance]
             if isinstance(conf, str):
                 try:
                     conf = json.loads(conf)
@@ -756,8 +756,8 @@ def calculate_similarity_score(
     if images_jsonl_path and images_jsonl_path.exists():
         images_data = read_jsonl_list(images_jsonl_path)
         for img_row in images_data:
-            img_id = img_row.get(config.image_id_column)
-            img_url = img_row.get(config.image_url_column)
+            img_id = img_row.get(config.column_image_id)
+            img_url = img_row.get(config.column_image_url)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
     else:
@@ -769,8 +769,8 @@ def calculate_similarity_score(
 
     for idx, row in enumerate(qrels):
         try:
-            query_text = row.get(config.query_column, "")
-            image_id = row.get(config.image_id_column, "")
+            query_text = row.get(config.column_query, "")
+            image_id = row.get(config.column_image_id, "")
             if not query_text or not image_id:
                 row[col_name] = None
                 failed += 1
@@ -854,15 +854,15 @@ def huggingface(
         images_data = read_jsonl_list(images_jsonl_path)
         image_url_map: Dict[str, str] = {}
         for img_row in images_data:
-            img_id = img_row.get(config.image_id_column)
-            img_url = img_row.get(config.image_url_column)
+            img_id = img_row.get(config.column_image_id)
+            img_url = img_row.get(config.column_image_url)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
 
     dataset_rows = []
     missing_count = 0
     for idx, row in enumerate(qrels):
-        img_id = row.get(config.image_id_column)
+        img_id = row.get(config.column_image_id)
         if not img_id:
             missing_count += 1
             continue
@@ -880,7 +880,7 @@ def huggingface(
             image_path = image_url_map[img_id]
 
         dataset_row = row.copy()
-        dataset_row[config.image_column] = image_path
+        dataset_row[config.column_image] = image_path
         dataset_rows.append(dataset_row)
 
         if (idx + 1) % progress_interval == 0:

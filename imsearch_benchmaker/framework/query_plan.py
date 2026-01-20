@@ -47,9 +47,9 @@ def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Di
     config = config or DEFAULT_BENCHMARK_CONFIG
     out: Dict[str, ImageRec] = {}
     for ann in read_jsonl(path):
-        iid = ann[config.image_id_column]
-        tags = set(ann.get(config.tags_column) or []) if config.tags_column else set()
-        facets = {facet: ann.get(facet) for facet in config.taxonomy_columns}
+        iid = ann[config.column_image_id]
+        tags = set(ann.get(config.column_tags) or []) if config.column_tags else set()
+        facets = {facet: ann.get(facet) for facet in config.columns_taxonomy}
         out[iid] = ImageRec(
             image_id=iid,
             facets=facets,
@@ -166,8 +166,8 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
 
         rows_out: List[Dict[str, Any]] = []
         for q in read_jsonl(seeds_path):
-            query_id = q[config.seed_query_id_column]
-            seed_ids: List[str] = list(q[config.seed_image_ids_column])
+            query_id = q[config.column_query_id]
+            seed_ids: List[str] = list(q[config.query_plan_seed_image_ids_column])
             seed_recs = [annotations[sid] for sid in seed_ids]
 
             prof = derive_query_profile(seed_recs, core_keys)
@@ -249,9 +249,9 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
 
             candidate_ids = list(seed_ids) + negatives
             rows_out.append({
-                config.query_id_column: query_id,
-                config.seed_image_ids_column: seed_ids,
-                config.candidate_image_ids_column: candidate_ids,
+                config.column_query_id: query_id,
+                config.query_plan_seed_image_ids_column: seed_ids,
+                config.query_plan_candidate_image_ids_column: candidate_ids,
             })
 
         return rows_out

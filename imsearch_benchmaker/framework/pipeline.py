@@ -94,7 +94,7 @@ def run_preprocess(
     )
     
     if out_seeds_jsonl:
-        num_seeds = num_seeds or config.num_seeds
+        num_seeds = num_seeds or config.query_plan_num_seeds
         build_seeds_jsonl(
             rows=rows,
             out_seeds_jsonl=out_seeds_jsonl,
@@ -153,10 +153,17 @@ def run_vision(
     # Load images
     images = []
     for row in read_jsonl(images_jsonl):
+        # Only include license and doi in metadata, any other columns can influence the vision annotation
+        metadata = {}
+        if config.column_license in row:
+            metadata[config.column_license] = row[config.column_license]
+        if config.column_doi in row:
+            metadata[config.column_doi] = row[config.column_doi]
+        
         images.append(VisionImage(
-            image_id=row[config.image_id_column],
-            image_url=row[config.image_url_column],
-            metadata={k: row.get(k) for k in config.metadata_columns if k in row},
+            image_id=row[config.column_image_id],
+            image_url=row[config.column_image_url],
+            metadata=metadata,
         ))
     
     # Get client from adapter
@@ -210,13 +217,13 @@ def run_vision(
     rows_out = []
     for ann in annotations:
         row = {
-            config.image_id_column: ann.image_id,
+            config.column_image_id: ann.image_id,
             **ann.fields,
         }
         if ann.tags:
-            row[config.tags_column or "tags"] = ann.tags
+            row[config.column_tags or "tags"] = ann.tags
         if ann.confidence:
-            row[config.confidence_column or "confidence"] = ann.confidence
+            row[config.column_confidence or "confidence"] = ann.confidence
         if ann.metadata:
             row.update(ann.metadata)
         rows_out.append(row)
@@ -331,14 +338,14 @@ def run_judge(
     # Load annotations for seed/candidate data
     ann_map = {}
     for row in read_jsonl(annotations_jsonl):
-        ann_map[row[config.image_id_column]] = row
+        ann_map[row[config.column_image_id]] = row
     
     # Load query plan and build queries
     queries = []
     for q_row in read_jsonl(query_plan_jsonl):
-        query_id = q_row[config.seed_query_id_column]
-        seed_ids = q_row[config.seed_image_ids_column]
-        cand_ids = q_row.get("candidate_image_ids", [])
+        query_id = q_row[config.column_query_id]
+        seed_ids = q_row[config.query_plan_seed_image_ids_column]
+        cand_ids = q_row.get(config.query_plan_candidate_image_ids_column, [])
         
         seed_images = []
         for sid in seed_ids:
@@ -408,17 +415,35 @@ def run_judge(
     for result in results:
         for judgment in result.judgments:
             row = {
-                config.query_id_column: result.query_id,
-                config.query_column: result.query_text,
-                config.image_id_column: judgment.image_id,
-                config.relevance_column: judgment.relevance_label,
+                config.column_query_id: result.query_id,
+                config.column_query: result.query_text,
+                config.column_image_id: judgment.image_id,
+                config.column_relevance: judgment.relevance_label,
             }
-            # Add metadata from annotations
+            # Add metadata from annotations - use config to get all columns
             if judgment.image_id in ann_map:
                 ann = ann_map[judgment.image_id]
-                for col in config.metadata_columns:
-                    if col in ann:
-                        row[col] = ann[col]
+                column_fields = config.get_columns()
+                
+                # Add all columns that exist in annotations
+                for field_name in column_fields:
+                    field_value = getattr(config, field_name)
+                    
+                    # Handle single column (column_*)
+                    if isinstance(field_value, str) and field_value in ann:
+                        row[field_value] = ann[field_value]
+                    
+                    # Handle list of columns (columns_boolean)
+                    elif isinstance(field_value, list):
+                        for col_name in field_value:
+                            if col_name and col_name in ann:
+                                row[col_name] = ann[col_name]
+                    
+                    # Handle dict of columns (columns_taxonomy)
+                    elif isinstance(field_value, dict):
+                        for col_name in field_value.keys():
+                            if col_name and col_name in ann:
+                                row[col_name] = ann[col_name]
             rows_out.append(row)
     
     write_jsonl(out_qrels_jsonl, rows_out)

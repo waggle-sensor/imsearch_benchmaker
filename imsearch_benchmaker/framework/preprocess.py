@@ -104,11 +104,11 @@ def build_row(
     img_id = image_id.lstrip("/")
     image_url = f"{base}/{img_id}"
     return {
-        config.image_id_column: image_id,
-        config.image_url_column: image_url,
-        config.mime_type_column: guess_mime_type(image_path),
-        config.license_column: meta.license,
-        config.doi_column: meta.doi,
+        config.column_image_id: image_id,
+        config.column_image_url: image_url,
+        config.column_mime_type: guess_mime_type(image_path),
+        config.column_license: meta.license,
+        config.column_doi: meta.doi,
     }
 
 
@@ -129,8 +129,8 @@ def write_seeds_jsonl(
     for i in range(num_seeds):
         idx = int(i * step)
         seeds.append({
-            config.seed_query_id_column: f"{seed_prefix}{i+1:03d}",
-            config.seed_image_ids_column: [image_ids_sorted[idx]],
+            config.column_query_id: f"{seed_prefix}{i+1:03d}",
+            config.query_plan_seed_image_ids_column: [image_ids_sorted[idx]],
         })
 
     with out_path.open("w", encoding="utf-8") as f:
@@ -207,7 +207,7 @@ def build_seeds_jsonl(
     config: Optional[BenchmarkConfig] = None,
 ) -> None:
     config = config or DEFAULT_BENCHMARK_CONFIG
-    image_ids = [row[config.image_id_column] for row in rows]
+    image_ids = [row[config.column_image_id] for row in rows]
     write_seeds_jsonl(
         image_ids=image_ids,
         out_path=out_seeds_jsonl,

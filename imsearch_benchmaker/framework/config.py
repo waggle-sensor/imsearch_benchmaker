@@ -79,37 +79,25 @@ class BenchmarkConfig:
     """
     Defines column names and categorical metadata for a benchmark.
     Sensitive keys should start with an underscore (_).
+    Any variable that starts with "column_" or "columns_" is considered a column in the final benchmarkdataset.
     """
 
-    image_column: str = "image"
-    image_id_column: str = "image_id"
-    image_url_column: str = "image_url"
-    mime_type_column: str = "mime_type"
-    license_column: str = "license"
-    doi_column: str = "doi"
-    query_column: str = "query_text"
-    query_id_column: str = "query_id"
-    relevance_column: str = "relevance_label"
-    seed_query_id_column: str = "query_id"
-    seed_image_ids_column: str = "seed_image_ids"
-    candidate_image_ids_column: str = "candidate_image_ids"
-
-    tags_column: Optional[str] = "tags"
-    summary_column: Optional[str] = "summary"
-    confidence_column: Optional[str] = "confidence"
-
-    taxonomy_columns: Dict[str, List[str]] = field(default_factory=dict)
-    boolean_columns: List[str] = field(default_factory=list)
-    metadata_columns: List[str] = field(default_factory=list) #TODO: do I need this?
-
-    num_seeds: Optional[int] = None
-    image_base_url: Optional[str] = None
-
-    query_plan_neg_total: Optional[int] = None
-    query_plan_neg_hard: Optional[int] = None
-    query_plan_neg_nearmiss: Optional[int] = None
-    query_plan_neg_easy: Optional[int] = None
-    query_plan_random_seed: Optional[int] = None
+    # dataset configuration
+    column_image: str = "image"
+    column_image_id: str = "image_id"
+    column_image_url: str = "image_url"
+    column_mime_type: str = "mime_type"
+    column_license: str = "license"
+    column_doi: str = "doi"
+    column_query: str = "query_text"
+    column_query_id: str = "query_id"
+    column_relevance: str = "relevance_label"
+    column_tags: Optional[str] = "tags"
+    column_summary: Optional[str] = "summary"
+    column_confidence: Optional[str] = "confidence"
+    columns_taxonomy: Dict[str, List[str]] = field(default_factory=dict)
+    columns_boolean: List[str] = field(default_factory=list)
+    image_base_url: Optional[str] = None 
 
     # File paths
     image_root_dir: Optional[str] = None  # Input directory for preprocessing
@@ -123,22 +111,38 @@ class BenchmarkConfig:
     summary_output_dir: Optional[str] = None  # Output directory for dataset summary
     hf_dataset_dir: Optional[str] = None  # Output directory for Hugging Face dataset
 
+    # Hugging Face configuration (sensitive fields use _ prefix)
     _hf_token: Optional[str] = field(default_factory=lambda: os.getenv("HF_TOKEN"))
     _hf_repo_id: Optional[str] = None
     _hf_private: Optional[bool] = None
 
+    # controlled tag vocabulary
     controlled_tag_vocab: List[str] = field(default_factory=list)
 
+    # Adapter configurations
     vision_config: VisionConfig = field(default_factory=VisionConfig)
     judge_config: JudgeConfig = field(default_factory=JudgeConfig)
     similarity_config: SimilarityConfig = field(default_factory=SimilarityConfig)
 
+    # Query planning configuration
+    query_plan_num_seeds: Optional[int] = None
+    query_plan_seed_image_ids_column: str = "seed_image_ids"
+    query_plan_candidate_image_ids_column: str = "candidate_image_ids"
     query_plan_core_facets: List[str] = field(default_factory=list)
     query_plan_off_facets: List[str] = field(default_factory=list)
     query_plan_diversity_facets: List[str] = field(default_factory=list)
+    query_plan_neg_total: Optional[int] = None
+    query_plan_neg_hard: Optional[int] = None
+    query_plan_neg_nearmiss: Optional[int] = None
+    query_plan_neg_easy: Optional[int] = None
+    query_plan_random_seed: Optional[int] = None
 
     def required_qrels_columns(self) -> List[str]:
-        return [self.query_column, self.query_id_column, self.relevance_column, self.image_id_column]
+        return [self.column_query, self.column_query_id, self.column_relevance, self.column_image_id]
+    
+    def get_columns(self) -> List[str]:
+        """Get all columns."""
+        return [field for field in dir(self) if (field.startswith('column_') or field.startswith('columns_')) and not field.startswith('_')]
 
     def to_csv(self) -> str:
         """
