@@ -248,7 +248,8 @@ class OpenAIVision(Vision):
 
     def wait_for_batch(self, batch_ref: Any) -> None:
         """Wait for OpenAI batch to complete."""
-        from .batch import BatchRefs, wait_for_batch
+        from .batch import wait_for_batch
+        from ...framework.io import BatchRefs
         if isinstance(batch_ref, BatchRefs):
             wait_for_batch(self.client, batch_ref.batch_id)
         elif isinstance(batch_ref, list):
@@ -260,7 +261,7 @@ class OpenAIVision(Vision):
         self, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
     ) -> None:
         """Download OpenAI batch results."""
-        from .batch import BatchRefs
+        from ...framework.io import BatchRefs
         from .client import download_file
         from ...framework.io import read_jsonl, write_jsonl
         

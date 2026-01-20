@@ -20,7 +20,15 @@ from .preprocess import build_images_jsonl, build_seeds_jsonl
 from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
 from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
 from .scoring import SimilarityAdapterRegistry
-from .io import read_jsonl, write_jsonl
+from .io import (
+    read_jsonl,
+    write_jsonl,
+    extract_failed_ids,
+    save_batch_id,
+    load_batch_id,
+    format_batch_id,
+    BatchRefs,
+)
 from .vision import Vision, VisionAdapterRegistry
 from .judge import Judge, JudgeAdapterRegistry
 from .vision_types import VisionImage, VisionAnnotation
@@ -33,78 +41,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-
-# -----------------------------
-# Helper Functions. TODO move to io.py
-# -----------------------------
-
-
-def extract_failed_ids(error_jsonl: Path, stage: str) -> Set[str]:
-    """
-    Extract IDs from failed requests in the error JSONL file.
-    
-    Args:
-        error_jsonl: Path to the error JSONL file from batch output.
-    
-    Returns:
-        Set of IDs that failed.
-    """
-    failed_ids = set()
-    for row in read_jsonl(error_jsonl):
-        custom_id = row.get("custom_id", "")
-        if custom_id.startswith(f"{stage}::"):
-            custom_id_id = custom_id.split(f"{stage}::", 1)[1]
-            failed_ids.add(custom_id_id)
-    return failed_ids
-
-
-def save_batch_id(batch_id: str, batch_id_file: Path) -> None:
-    """
-    Save batch ID(s) to a file. Supports single batch ID or comma-separated list.
-    
-    Args:
-        batch_id: Single batch ID or comma-separated list of batch IDs.
-        batch_id_file: Path to save the batch ID(s).
-    """
-    batch_id_file.parent.mkdir(parents=True, exist_ok=True)
-    batch_id_file.write_text(batch_id)
-    logger.info(f"Saved batch ID(s) to {batch_id_file}: {batch_id}")
-
-
-def load_batch_id(batch_id_file: Path) -> str:
-    """
-    Load batch ID(s) from a file.
-    
-    Args:
-        batch_id_file: Path to the batch ID file.
-    
-    Returns:
-        Batch ID string (may be comma-separated for multiple batches).
-    """
-    if not batch_id_file.exists():
-        raise FileNotFoundError(f"Batch ID file not found: {batch_id_file}")
-    return batch_id_file.read_text().strip()
-
-
-def format_batch_id(batch_ref: Any) -> str:
-    """
-    Format batch reference(s) into a comma-separated string for saving.
-    
-    Args:
-        batch_ref: Single BatchRefs or list of BatchRefs.
-    
-    Returns:
-        Comma-separated batch ID string.
-    """
-    from imsearch_benchmaker.adapters.openai.batch import BatchRefs #TODO: Move BatchRefs to framework batch.py or io.py
-    
-    if isinstance(batch_ref, BatchRefs):
-        return batch_ref.batch_id
-    elif isinstance(batch_ref, list):
-        return ",".join([ref.batch_id for ref in batch_ref if isinstance(ref, BatchRefs)])
-    else:
-        return str(batch_ref)
 
 
 # -----------------------------
@@ -691,7 +627,6 @@ def run_vision_wait(
     # Parse comma-separated batch IDs
     batch_ids = [bid.strip() for bid in batch_id.split(",") if bid.strip()]
     
-    from imsearch_benchmaker.adapters.openai.batch import BatchRefs
     
     # Create BatchRefs for each batch ID
     batch_refs = [BatchRefs(input_file_id="", batch_id=bid) for bid in batch_ids]
@@ -738,7 +673,6 @@ def run_vision_download(
     
     # Parse comma-separated batch IDs and create BatchRefs
     batch_ids = [bid.strip() for bid in batch_id.split(",") if bid.strip()]
-    from imsearch_benchmaker.adapters.openai.batch import BatchRefs
     
     batch_refs = [BatchRefs(input_file_id="", batch_id=bid) for bid in batch_ids]
     batch_ref = batch_refs[0] if len(batch_refs) == 1 else batch_refs
@@ -1031,7 +965,6 @@ def run_judge_wait(
     # Parse comma-separated batch IDs
     batch_ids = [bid.strip() for bid in batch_id.split(",") if bid.strip()]
     
-    from imsearch_benchmaker.adapters.openai.batch import BatchRefs
     
     # Create BatchRefs for each batch ID
     batch_refs = [BatchRefs(input_file_id="", batch_id=bid) for bid in batch_ids]
@@ -1078,7 +1011,6 @@ def run_judge_download(
     
     # Parse comma-separated batch IDs and create BatchRefs
     batch_ids = [bid.strip() for bid in batch_id.split(",") if bid.strip()]
-    from imsearch_benchmaker.adapters.openai.batch import BatchRefs
     
     batch_refs = [BatchRefs(input_file_id="", batch_id=bid) for bid in batch_ids]
     batch_ref = batch_refs[0] if len(batch_refs) == 1 else batch_refs

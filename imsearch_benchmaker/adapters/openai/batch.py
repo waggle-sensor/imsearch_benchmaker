@@ -7,19 +7,12 @@ OpenAI Batch API helpers (submit, poll).
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-from ...framework.io import read_jsonl, write_jsonl
-
-
-@dataclass
-class BatchRefs:
-    input_file_id: str
-    batch_id: str
+from ...framework.io import read_jsonl, write_jsonl, BatchRefs
 
 
 def shard_batch_jsonl(
