@@ -7,7 +7,7 @@ OpenAI adapter for query generation and relevance judgments.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Iterable
+from typing import Any, Dict, Optional, Iterable, List
 from pathlib import Path
 import tempfile
 from .config import OpenAIJudgeConfig
@@ -16,7 +16,7 @@ from ...framework.config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from ...framework.judge_types import JudgeJudgment, JudgeQuery, JudgeResult
 from ...framework.io import write_jsonl
 from ._responses import extract_json_from_response_body
-from .batch import submit_batch, submit_batch_shards, shard_batch_jsonl
+from .batch import submit_batch, submit_batch_shards, shard_batch_jsonl, list_batches
 from .client import get_openai_client
 
 
@@ -67,19 +67,29 @@ class OpenAIJudge(Judge):
         reasoning_effort: str = "medium",
         metadata: Optional[Dict[str, str]] = None,
         config: Optional[BenchmarkConfig] = None,
+        client: Any = None,
     ) -> None:
-        if not isinstance(self.config.judge_config, OpenAIJudgeConfig):
-            raise ValueError("OpenAI Judge adapter requires OpenAIJudgeConfig in config.judge_config.")
-        if not self.model:
-            raise ValueError("OpenAI Judge adapter requires a model name.")
-        if not self.system_prompt or not self.user_prompt:
-            raise ValueError("OpenAI Judge adapter requires system_prompt and user_prompt.")
         config = config or DEFAULT_BENCHMARK_CONFIG
+        
+        # Initialize client if not provided
+        if client is None:
+            client = get_openai_client(openai_config=config.judge_config)
+        
+        # set self.config and self.client
         self.config = config
+        self.client = client
+        
+        if not isinstance(config.judge_config, OpenAIJudgeConfig):
+            raise ValueError("OpenAI Judge adapter requires OpenAIJudgeConfig in config.judge_config.")
+        
         judge_cfg = config.judge_config
         self.model = model or judge_cfg.model
+        if not self.model:
+            raise ValueError("OpenAI Judge adapter requires a model name.")
         self.system_prompt = system_prompt or judge_cfg.system_prompt
         self.user_prompt = user_prompt or judge_cfg.user_prompt
+        if not self.system_prompt or not self.user_prompt:
+            raise ValueError("OpenAI Judge adapter requires system_prompt and user_prompt.")
         # Build schema automatically if not provided
         self.json_schema = json_schema or self.build_json_schema(config)
         self.max_output_tokens = max_output_tokens or judge_cfg.max_output_tokens or 8000
@@ -138,7 +148,6 @@ class OpenAIJudge(Judge):
 
     def submit(
         self,
-        client: Any,
         queries: Iterable[JudgeQuery],
         out_jsonl: Optional[Path] = None,
         completion_window: Optional[str] = None,
@@ -163,11 +172,18 @@ class OpenAIJudge(Judge):
                 out_jsonl = Path(tmp.name)
         write_jsonl(out_jsonl, batch_lines)
 
+        # Ensure stage and purpose metadata are set
+        if metadata is None:
+            metadata = {}
+        metadata = dict(metadata)  # Make a copy to avoid mutating the original
+        metadata.setdefault("stage", self.config.judge_config.stage)
+        metadata.setdefault("purpose", self.config.benchmark_name)
+        
         if max_items_per_shard and len(batch_lines) > max_items_per_shard:
             shard_dir = out_jsonl.parent / f"{out_jsonl.stem}_shards"
             shard_paths = shard_batch_jsonl(out_jsonl, shard_dir, max_items_per_shard, shard_prefix)
             return submit_batch_shards(
-                client,
+                self.client,
                 shard_paths,
                 completion_window=completion_window,
                 metadata=metadata,
@@ -175,28 +191,28 @@ class OpenAIJudge(Judge):
             )
 
         return submit_batch(
-            client,
+            self.client,
             out_jsonl,
             completion_window=completion_window,
             metadata=metadata,
         )
 
-    def get_client(self) -> Any:
+    def get_client(self, config: Any = None) -> Any:
         """Get OpenAI client."""
-        return get_openai_client(openai_config=self.config.judge_config)
+        return self.client
 
-    def wait_for_batch(self, client: Any, batch_ref: Any) -> None:
+    def wait_for_batch(self, batch_ref: Any) -> None:
         """Wait for OpenAI batch to complete."""
         from .batch import BatchRefs, wait_for_batch
         if isinstance(batch_ref, BatchRefs):
-            wait_for_batch(client, batch_ref.batch_id)
+            wait_for_batch(self.client, batch_ref.batch_id)
         elif isinstance(batch_ref, list):
             for ref in batch_ref:
                 if isinstance(ref, BatchRefs):
-                    wait_for_batch(client, ref.batch_id)
+                    wait_for_batch(self.client, ref.batch_id)
 
     def download_batch_results(
-        self, client: Any, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
+        self, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
     ) -> None:
         """Download OpenAI batch results."""
         from .batch import BatchRefs
@@ -213,16 +229,16 @@ class OpenAIJudge(Judge):
         for ref in batch_refs:
             if not isinstance(ref, BatchRefs):
                 continue
-            b = client.batches.retrieve(ref.batch_id)
+            b = self.client.batches.retrieve(ref.batch_id)
             if b.output_file_id:
                 temp_output = output_path.parent / f"temp_output_{ref.batch_id}.jsonl"
-                download_file(client, b.output_file_id, temp_output)
+                download_file(self.client, b.output_file_id, temp_output)
                 for row in read_jsonl(temp_output):
                     all_output_rows.append(row)
                 temp_output.unlink()
             if b.error_file_id and error_path:
                 temp_error = error_path.parent / f"temp_error_{ref.batch_id}.jsonl"
-                download_file(client, b.error_file_id, temp_error)
+                download_file(self.client, b.error_file_id, temp_error)
                 for row in read_jsonl(temp_error):
                     all_error_rows.append(row)
                 temp_error.unlink()
@@ -230,6 +246,20 @@ class OpenAIJudge(Judge):
         write_jsonl(output_path, all_output_rows)
         if error_path and all_error_rows:
             write_jsonl(error_path, all_error_rows)
+
+    def list_batches(self, active_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        List OpenAI batches for judge stage.
+        
+        Args:
+            active_only: If True, only return active batches
+            limit: Maximum number of batches to return
+            
+        Returns:
+            List of batch dictionaries with id, status, endpoint, created_at, metadata, and request_counts
+            Only returns batches with stage="judge" in metadata
+        """
+        return list_batches(self.client, active_only=active_only, limit=limit, stage=self.config.judge_config.stage)
 
     def get_name(self) -> str:
         return "openai_judge"

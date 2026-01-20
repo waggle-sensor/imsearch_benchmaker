@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Type, Any, Optional
 
 from .judge_types import JudgeQuery, JudgeResult
-from .config import JudgeConfig
+from .config import BenchmarkConfig, JudgeConfig
 
 
 class Judge(ABC):
@@ -20,6 +20,10 @@ class Judge(ABC):
     """
 
     batch_endpoint: str = "/v1/responses"
+
+    def __init__(self, config: BenchmarkConfig, client: Any = None) -> None:
+        self.config = config
+        self.client = client
 
     @abstractmethod
     def build_request(self, query: JudgeQuery) -> Dict[str, object]:
@@ -34,7 +38,7 @@ class Judge(ABC):
         """
 
     @abstractmethod
-    def submit(self, client: Any, queries: Iterable[JudgeQuery], **kwargs: Any) -> object:
+    def submit(self, queries: Iterable[JudgeQuery], **kwargs: Any) -> object:
         """
         Submit queries to the provider and return a provider-specific reference.
         """
@@ -47,7 +51,7 @@ class Judge(ABC):
         """
         return None
 
-    def wait_for_batch(self, client: Any, batch_ref: Any) -> None:
+    def wait_for_batch(self, batch_ref: Any) -> None:
         """
         Wait for a batch to complete.
         Override in subclasses to implement provider-specific waiting logic.
@@ -55,7 +59,7 @@ class Judge(ABC):
         pass
 
     def download_batch_results(
-        self, client: Any, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
+        self, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
     ) -> None:
         """
         Download batch results to output_path and optionally errors to error_path.
@@ -69,7 +73,7 @@ class Judge(ABC):
         """
         for query in queries:
             yield {
-                "custom_id": f"judge::{query.query_id}",
+                "custom_id": f"{self.config.judge_config.stage}::{query.query_id}",
                 "method": "POST",
                 "url": self.batch_endpoint,
                 "body": self.build_request(query),
@@ -78,6 +82,18 @@ class Judge(ABC):
     def get_name(self) -> str:
         return self.__class__.__name__
 
+    def list_batches(self, active_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        List batches for this adapter.
+        
+        Args:
+            active_only: If True, only return active batches
+            limit: Maximum number of batches to return
+            
+        Returns:
+            List of batch dictionaries (format depends on adapter implementation)
+        """
+        return []
 
 class JudgeAdapterRegistry:
     """

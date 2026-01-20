@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
@@ -106,4 +106,53 @@ def wait_for_batch(client: OpenAI, batch_id: str, poll_s: int = 60) -> Dict[str,
         if status in ("completed", "failed", "expired", "canceled"):
             return b.model_dump() if hasattr(b, "model_dump") else dict(b)
         time.sleep(poll_s)
+
+
+def list_batches(client: OpenAI, active_only: bool = False, limit: int = 50, stage: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    List OpenAI batches.
+    
+    Args:
+        client: OpenAI client instance
+        active_only: If True, only return active batches
+        limit: Maximum number of batches to return
+        stage: If provided, filter batches by stage ("vision" or "judge")
+        
+    Returns:
+        List of batch dictionaries with id, status, endpoint, created_at, metadata, and request_counts
+    """
+    batches = client.batches.list(limit=limit)
+    
+    ACTIVE = {"validating", "in_progress", "finalizing"}
+    
+    result = []
+    for b in batches.data:
+        if active_only and b.status not in ACTIVE:
+            continue
+        
+        # Convert SDK/Pydantic objects to plain dicts
+        if hasattr(b, "model_dump"):
+            request_counts = b.request_counts.model_dump() if b.request_counts else None
+            metadata = b.metadata.model_dump() if hasattr(b.metadata, "model_dump") else b.metadata
+        else:
+            # Fallback (older SDK)
+            request_counts = dict(b.request_counts) if b.request_counts else None
+            metadata = dict(b.metadata) if b.metadata else None
+        
+        # Filter by stage if specified
+        if stage is not None:
+            batch_stage = metadata.get("stage") if isinstance(metadata, dict) else None
+            if batch_stage != stage:
+                continue
+        
+        result.append({
+            "id": b.id,
+            "status": b.status,
+            "endpoint": b.endpoint,
+            "created_at": b.created_at,
+            "metadata": metadata,
+            "request_counts": request_counts,
+        })
+    
+    return result
 

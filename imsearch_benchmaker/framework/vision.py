@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Type, Any, Optional
 
 from .vision_types import VisionAnnotation, VisionImage
-from .config import VisionConfig
+from .config import BenchmarkConfig, VisionConfig
 
 class Vision(ABC):
     """
@@ -19,6 +19,10 @@ class Vision(ABC):
     """
 
     batch_endpoint: str = "/v1/responses"
+
+    def __init__(self, config: BenchmarkConfig, client: Any = None) -> None:
+        self.config = config
+        self.client = client
 
     @abstractmethod
     def build_request(self, image: VisionImage) -> Dict[str, object]:
@@ -33,7 +37,7 @@ class Vision(ABC):
         """
 
     @abstractmethod
-    def submit(self, client: Any, images: Iterable[VisionImage], **kwargs: Any) -> object:
+    def submit(self, images: Iterable[VisionImage], **kwargs: Any) -> object:
         """
         Submit images to the provider and return a provider-specific reference.
         """
@@ -46,7 +50,7 @@ class Vision(ABC):
         """
         return None
 
-    def wait_for_batch(self, client: Any, batch_ref: Any) -> None:
+    def wait_for_batch(self, batch_ref: Any) -> None:
         """
         Wait for a batch to complete.
         Override in subclasses to implement provider-specific waiting logic.
@@ -54,7 +58,7 @@ class Vision(ABC):
         pass
 
     def download_batch_results(
-        self, client: Any, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
+        self, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
     ) -> None:
         """
         Download batch results to output_path and optionally errors to error_path.
@@ -68,7 +72,7 @@ class Vision(ABC):
         """
         for image in images:
             yield {
-                "custom_id": f"vision::{image.image_id}",
+                "custom_id": f"{self.config.vision_config.stage}::{image.image_id}",
                 "method": "POST",
                 "url": self.batch_endpoint,
                 "body": self.build_request(image),
@@ -80,6 +84,18 @@ class Vision(ABC):
         """
         return self.__class__.__name__
 
+    def list_batches(self, active_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        List batches for this adapter.
+        
+        Args:
+            active_only: If True, only return active batches
+            limit: Maximum number of batches to return
+            
+        Returns:
+            List of batch dictionaries (format depends on adapter implementation)
+        """
+        return []
 
 class VisionAdapterRegistry:
     """

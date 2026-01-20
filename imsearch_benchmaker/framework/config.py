@@ -44,6 +44,7 @@ class VisionConfig:
     image_detail: Optional[str] = None
     max_images_per_batch: Optional[int] = None
     max_concurrent_batches: Optional[int] = None
+    stage: str = "vision"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ class JudgeConfig:
     max_queries_per_batch: Optional[int] = None
     max_candidates: Optional[int] = None
     max_concurrent_batches: Optional[int] = None
+    stage: str = "judge"
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,13 @@ class BenchmarkConfig:
     """
 
     # dataset configuration
+    benchmark_name: str = "Default benchmark"
+    benchmark_description: str = "A default benchmark configuration"
+    benchmark_author: Optional[str] = None
+    benchmark_author_email: Optional[str] = None
+    benchmark_author_affiliation: Optional[str] = None
+    benchmark_author_orcid: Optional[str] = None
+    benchmark_author_github: Optional[str] = None
     column_image: str = "image"
     column_image_id: str = "image_id"
     column_image_url: str = "image_url"
