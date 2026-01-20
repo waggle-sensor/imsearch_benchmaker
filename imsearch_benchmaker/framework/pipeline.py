@@ -113,7 +113,6 @@ def run_preprocess(
     
     return rows
 
-#TODO: use granular step-by-step functions instead of rewirting the code from scratch.
 def run_vision(
     images_jsonl: Optional[Path] = None,
     out_annotations_jsonl: Optional[Path] = None,
@@ -126,6 +125,7 @@ def run_vision(
 ) -> List[VisionAnnotation]:
     """
     Run vision annotation pipeline: build batch, submit, wait, download, parse.
+    This function orchestrates the granular step-by-step functions.
     
     Args:
         images_jsonl: Input images JSONL path. If None, uses config.images_jsonl.
@@ -141,119 +141,78 @@ def run_vision(
         List of VisionAnnotation objects.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
+
+    logger.info("=" * 80)
+    logger.info("Starting vision pipeline")
+    logger.info("=" * 80)
     
-    # Get paths from config if not provided
-    images_jsonl = Path(images_jsonl) if images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
-    out_annotations_jsonl = Path(out_annotations_jsonl) if out_annotations_jsonl else (Path(config.annotations_jsonl) if config.annotations_jsonl else None)
+    # Step 1: Make batch input
+    logger.info("\n" + "=" * 80)
+    logger.info("Step a: Making vision batch input")
+    logger.info("=" * 80)
+    batch_input_jsonl = run_vision_make(
+        images_jsonl=images_jsonl,
+        config=config,
+        vision_adapter=vision_adapter,
+        adapter_name=adapter_name,
+    )
     
-    if images_jsonl is None:
-        raise ValueError("images_jsonl must be provided or set in config.images_jsonl")
-    if out_annotations_jsonl is None:
-        raise ValueError("out_annotations_jsonl must be provided or set in config.annotations_jsonl")
-    
-    # Determine adapter name
-    if adapter_name is None:
-        adapter_name = config.vision_config.adapter
-    
-    # Get or create adapter
-    if vision_adapter is None:
-        vision_adapter = VisionAdapterRegistry.get(adapter_name, config=config)
-    
-    # Load images
-    images = []
-    for row in read_jsonl(images_jsonl):
-        # Only include license and doi in metadata, any other columns can influence the vision annotation
-        metadata = {}
-        if config.column_license in row:
-            metadata[config.column_license] = row[config.column_license]
-        if config.column_doi in row:
-            metadata[config.column_doi] = row[config.column_doi]
-        
-        images.append(VisionImage(
-            image_id=row[config.column_image_id],
-            image_url=row[config.column_image_url],
-            metadata=metadata,
-        ))
-    
-    # Submit batch
-    batch_output_jsonl = batch_output_jsonl or out_annotations_jsonl.parent / "vision_batch_output.jsonl"
-    batch_output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-    batch_error_jsonl = batch_error_jsonl or out_annotations_jsonl.parent / "vision_batch_error.jsonl"
-    
-    batch_ref = vision_adapter.submit(
-        images=images,
-        out_jsonl=batch_output_jsonl.parent / "vision_batch_input.jsonl",
+    # Step 2: Submit batch
+    logger.info("\n" + "=" * 80)
+    logger.info("Step b: Submitting vision batch")
+    logger.info("=" * 80)
+    batch_id_file = batch_input_jsonl.parent / ".vision_batch_id"
+    run_vision_submit(
+        batch_input_jsonl=batch_input_jsonl,
+        batch_id_file=batch_id_file,
+        config=config,
+        vision_adapter=vision_adapter,
+        adapter_name=adapter_name,
     )
     
     if wait_for_completion:
-        # Wait for batch completion using adapter method
-        vision_adapter.wait_for_batch(batch_ref)
+        # Step 3: Wait for completion
+        logger.info("\n" + "=" * 80)
+        logger.info("Step c: Waiting for vision batch completion")
+        logger.info("=" * 80)
+        run_vision_wait(
+            batch_id_file=batch_id_file,
+            config=config,
+            vision_adapter=vision_adapter,
+            adapter_name=adapter_name,
+        )
         
-        # Download results using adapter method
-        vision_adapter.download_batch_results(
-            batch_ref=batch_ref,
-            output_path=batch_output_jsonl,
-            error_path=batch_error_jsonl,
+        # Step 4: Download results
+        logger.info("\n" + "=" * 80)
+        logger.info("Step d: Downloading vision batch results")
+        logger.info("=" * 80)
+        run_vision_download(
+            batch_id_file=batch_id_file,
+            batch_output_jsonl=batch_output_jsonl,
+            batch_error_jsonl=batch_error_jsonl,
+            config=config,
+            vision_adapter=vision_adapter,
+            adapter_name=adapter_name,
         )
     
-    # Parse results
-    annotations = []
-    failed_rows = []
-    if batch_output_jsonl.exists():
-        for row in read_jsonl(batch_output_jsonl):
-            custom_id = row.get("custom_id", "")
-            if not custom_id.startswith(f"{config.vision_config.stage}::"):
-                continue
-            image_id = custom_id.split(f"{config.vision_config.stage}::", 1)[1]
-            error = row.get("error")
-            if error:
-                logger.warning(f"Vision request failed for {image_id}: {error}")
-                failed_rows.append({
-                    "image_id": image_id,
-                    "custom_id": custom_id,
-                    "error": error,
-                })
-                continue
-            
-            body = row.get("response", {}).get("body", {})
-            image = next((img for img in images if img.image_id == image_id), None)
-            if image:
-                try:
-                    ann = vision_adapter.parse_response(body, image)
-                    annotations.append(ann)
-                except Exception as e:
-                    logger.error(f"Failed to parse vision result for {image_id}: {e}")
-                    failed_rows.append({
-                        "image_id": image_id,
-                        "custom_id": custom_id,
-                        "error": {"message": str(e), "type": "parse_error"},
-                    })
+    # Step 5: Parse results
+    logger.info("\n" + "=" * 80)
+    logger.info("Step e: Parsing vision batch results")
+    logger.info("=" * 80)
+    annotations = run_vision_parse(
+        batch_output_jsonl=batch_output_jsonl,
+        images_jsonl=images_jsonl,
+        out_annotations_jsonl=out_annotations_jsonl,
+        config=config,
+        vision_adapter=vision_adapter,
+        adapter_name=adapter_name,
+    )
     
-    # Write failed rows to a separate file for debugging
-    if failed_rows:
-        failed_path = out_annotations_jsonl.parent / f"{out_annotations_jsonl.stem}_failed.jsonl"
-        write_jsonl(failed_path, failed_rows)
-        logger.warning(f"Wrote {len(failed_rows)} failed vision requests to {failed_path}")
+    logger.info("\n" + "=" * 80)
+    logger.info("Vision pipeline complete!")
+    logger.info("=" * 80)
     
-    # Write annotations JSONL
-    rows_out = []
-    for ann in annotations:
-        row = {
-            config.column_image_id: ann.image_id,
-            **ann.fields,
-        }
-        if ann.tags:
-            row[config.column_tags or "tags"] = ann.tags
-        if ann.confidence:
-            row[config.column_confidence or "confidence"] = ann.confidence
-        if ann.metadata:
-            row.update(ann.metadata)
-        rows_out.append(row)
-    
-    write_jsonl(out_annotations_jsonl, rows_out)
-    logger.info(f"Parsed {len(annotations)} successful vision annotations, {len(failed_rows)} failed")
     return annotations
-
 
 def run_query_plan(
     annotations_jsonl: Optional[Path] = None,
@@ -307,7 +266,6 @@ def run_query_plan(
     )
     return build_query_plan(annotations, seeds_jsonl, strategy, out_query_plan_jsonl, config)
 
-# TODO: use granular step-by-step functions instead of rewirting the code from scratch.
 def run_judge(
     query_plan_jsonl: Optional[Path] = None,
     annotations_jsonl: Optional[Path] = None,
@@ -321,6 +279,7 @@ def run_judge(
 ) -> List[JudgeResult]:
     """
     Run judge pipeline: build batch, submit, wait, download, parse.
+    This function orchestrates the granular step-by-step functions.
     
     Args:
         query_plan_jsonl: Input query plan JSONL path. If None, uses config.query_plan_jsonl.
@@ -337,164 +296,175 @@ def run_judge(
         List of JudgeResult objects.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
+
+    logger.info("=" * 80)
+    logger.info("Starting judge pipeline")
+    logger.info("=" * 80)
     
-    # Get paths from config if not provided
-    query_plan_jsonl = Path(query_plan_jsonl) if query_plan_jsonl else (Path(config.query_plan_jsonl) if config.query_plan_jsonl else None)
-    annotations_jsonl = Path(annotations_jsonl) if annotations_jsonl else (Path(config.annotations_jsonl) if config.annotations_jsonl else None)
-    out_qrels_jsonl = Path(out_qrels_jsonl) if out_qrels_jsonl else (Path(config.qrels_jsonl) if config.qrels_jsonl else None)
-    
-    if query_plan_jsonl is None:
-        raise ValueError("query_plan_jsonl must be provided or set in config.query_plan_jsonl")
-    if annotations_jsonl is None:
-        raise ValueError("annotations_jsonl must be provided or set in config.annotations_jsonl")
-    if out_qrels_jsonl is None:
-        raise ValueError("out_qrels_jsonl must be provided or set in config.qrels_jsonl")
-    
-    # Determine adapter name
-    if adapter_name is None:
-        adapter_name = config.judge_config.adapter
-    
-    # Get or create adapter
-    if judge_adapter is None:
-        judge_adapter = JudgeAdapterRegistry.get(adapter_name, config=config)
-    
-    # Load annotations for seed/candidate data
-    ann_map = {}
-    for row in read_jsonl(annotations_jsonl):
-        ann_map[row[config.column_image_id]] = row
-    
-    # Load query plan and build queries
-    queries = []
-    for q_row in read_jsonl(query_plan_jsonl):
-        query_id = q_row[config.column_query_id]
-        seed_ids = q_row[config.query_plan_seed_image_ids_column]
-        cand_ids = q_row.get(config.query_plan_candidate_image_ids_column, [])
-        
-        seed_images = []
-        for sid in seed_ids:
-            if sid in ann_map:
-                seed_images.append(ann_map[sid])
-        
-        candidate_images = []
-        for cid in cand_ids:
-            if cid in ann_map:
-                candidate_images.append(ann_map[cid])
-        
-        queries.append(JudgeQuery(
-            query_id=query_id,
-            seed_images=seed_images,
-            candidate_images=candidate_images,
-        ))
-    
-    # Submit batch
-    batch_output_jsonl = batch_output_jsonl or out_qrels_jsonl.parent / "judge_batch_output.jsonl"
-    batch_output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-    batch_error_jsonl = batch_error_jsonl or out_qrels_jsonl.parent / "judge_batch_error.jsonl"
-    
-    batch_ref = judge_adapter.submit(
-        queries=queries,
-        out_jsonl=batch_output_jsonl.parent / "judge_batch_input.jsonl",
+    # Step 1: Make batch input
+    logger.info("\n" + "=" * 80)
+    logger.info("Step a: Making judge batch input")
+    logger.info("=" * 80)
+    batch_input_jsonl = run_judge_make(
+        query_plan_jsonl=query_plan_jsonl,
+        annotations_jsonl=annotations_jsonl,
+        config=config,
+        judge_adapter=judge_adapter,
+        adapter_name=adapter_name,
     )
     
-    # Save batch ID to file
-    batch_id_str = format_batch_id(batch_ref)
-    batch_id_file = out_qrels_jsonl.parent / ".judge_batch_id"
-    save_batch_id(batch_id_str, batch_id_file)
+    # Step 2: Submit batch
+    logger.info("\n" + "=" * 80)
+    logger.info("Step b: Submitting judge batch")
+    logger.info("=" * 80)
+    batch_id_file = batch_input_jsonl.parent / ".judge_batch_id"
+    run_judge_submit(
+        batch_input_jsonl=batch_input_jsonl,
+        batch_id_file=batch_id_file,
+        config=config,
+        judge_adapter=judge_adapter,
+        adapter_name=adapter_name,
+    )
     
     if wait_for_completion:
-        # Wait for batch completion using adapter method
-        judge_adapter.wait_for_batch(batch_ref)
+        # Step 3: Wait for completion
+        logger.info("\n" + "=" * 80)
+        logger.info("Step c: Waiting for judge batch completion")
+        logger.info("=" * 80)
+        run_judge_wait(
+            batch_id_file=batch_id_file,
+            config=config,
+            judge_adapter=judge_adapter,
+            adapter_name=adapter_name,
+        )
         
-        # Download results using adapter method
-        judge_adapter.download_batch_results(
-            batch_ref=batch_ref,
-            output_path=batch_output_jsonl,
-            error_path=batch_error_jsonl,
+        # Step 4: Download results
+        logger.info("\n" + "=" * 80)
+        logger.info("Step d: Downloading judge batch results")
+        logger.info("=" * 80)
+        run_judge_download(
+            batch_id_file=batch_id_file,
+            batch_output_jsonl=batch_output_jsonl,
+            batch_error_jsonl=batch_error_jsonl,
+            config=config,
+            judge_adapter=judge_adapter,
+            adapter_name=adapter_name,
         )
     
-    # Parse results
-    results = []
-    failed_rows = []
-    if batch_output_jsonl.exists():
-        for row in read_jsonl(batch_output_jsonl):
-            custom_id = row.get("custom_id", "")
-            if not custom_id.startswith(f"{config.judge_config.stage}::"):
-                continue
-            query_id = custom_id.split(f"{config.judge_config.stage}::", 1)[1]
-            error = row.get("error")
-            if error:
-                logger.warning(f"Judge request failed for {query_id}: {error}")
-                failed_rows.append({
-                    "query_id": query_id,
-                    "custom_id": custom_id,
-                    "error": error,
-                })
-                continue
-            
-            body = row.get("response", {}).get("body", {})
-            query = next((q for q in queries if q.query_id == query_id), None)
-            if query:
-                try:
-                    result = judge_adapter.parse_response(body, query)
-                    results.append(result)
-                except Exception as e:
-                    logger.error(f"Failed to parse judge result for {query_id}: {e}")
-                    failed_rows.append({
-                        "query_id": query_id,
-                        "custom_id": custom_id,
-                        "error": {"message": str(e), "type": "parse_error"},
-                    })
+    # Step 5: Parse results
+    logger.info("\n" + "=" * 80)
+    logger.info("Step e: Parsing judge batch results")
+    logger.info("=" * 80)
+    results = run_judge_parse(
+        batch_output_jsonl=batch_output_jsonl,
+        query_plan_jsonl=query_plan_jsonl,
+        annotations_jsonl=annotations_jsonl,
+        out_qrels_jsonl=out_qrels_jsonl,
+        config=config,
+        judge_adapter=judge_adapter,
+        adapter_name=adapter_name,
+    )
     
-    # Write failed rows to a separate file for debugging
-    if failed_rows:
-        failed_path = out_qrels_jsonl.parent / f"{out_qrels_jsonl.stem}_failed.jsonl"
-        write_jsonl(failed_path, failed_rows)
-        logger.warning(f"Wrote {len(failed_rows)} failed judge requests to {failed_path}")
+    logger.info("\n" + "=" * 80)
+    logger.info("Judge pipeline complete!")
+    logger.info("=" * 80)
     
-    # Write qrels JSONL
-    rows_out = []
-    for result in results:
-        for judgment in result.judgments:
-            row = {
-                config.column_query_id: result.query_id,
-                config.column_query: result.query_text,
-                config.column_image_id: judgment.image_id,
-                config.column_relevance: judgment.relevance_label,
-            }
-            # Add metadata from annotations - use config to get all columns
-            if judgment.image_id in ann_map:
-                ann = ann_map[judgment.image_id]
-                column_fields = config.get_columns()
-                
-                # Add all columns that exist in annotations
-                for field_name in column_fields:
-                    field_value = getattr(config, field_name)
-                    
-                    # Handle single column (column_*)
-                    if isinstance(field_value, str) and field_value in ann:
-                        row[field_value] = ann[field_value]
-                    
-                    # Handle list of columns (columns_boolean)
-                    elif isinstance(field_value, list):
-                        for col_name in field_value:
-                            if col_name and col_name in ann:
-                                row[col_name] = ann[col_name]
-                    
-                    # Handle dict of columns (columns_taxonomy)
-                    elif isinstance(field_value, dict):
-                        for col_name in field_value.keys():
-                            if col_name and col_name in ann:
-                                row[col_name] = ann[col_name]
-            rows_out.append(row)
-    
-    write_jsonl(out_qrels_jsonl, rows_out)
-    logger.info(f"Parsed {len(results)} successful judge results, {len(failed_rows)} failed")
     return results
 
-#TODO: implement this.
-def run_all():
-    """Run all steps of the pipeline."""
-    pass
+def run_all(
+    input_dir: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    vision_adapter: Optional[Vision] = None,
+    judge_adapter: Optional[Judge] = None,
+    vision_adapter_name: Optional[str] = None,
+    judge_adapter_name: Optional[str] = None,
+    wait_for_completion: bool = True,
+    skip_preprocess: bool = False,
+    skip_vision: bool = False,
+    skip_query_plan: bool = False,
+    skip_judge: bool = False,
+) -> None:
+    """
+    Run all steps of the pipeline: preprocess, vision, query_plan, judge.
+    This function orchestrates the complete benchmark creation pipeline.
+    
+    Args:
+        input_dir: Input directory for images. If None, uses config.image_root_dir.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated vision adapter.
+        judge_adapter: Optional pre-instantiated judge adapter.
+        vision_adapter_name: Vision adapter name to use. If None, uses config.vision_config.adapter.
+        judge_adapter_name: Judge adapter name to use. If None, uses config.judge_config.adapter.
+        wait_for_completion: If True, wait for batch completion in vision and judge steps.
+        skip_preprocess: If True, skip the preprocess step.
+        skip_vision: If True, skip the vision step.
+        skip_query_plan: If True, skip the query plan step.
+        skip_judge: If True, skip the judge step.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    logger.info("=" * 80)
+    logger.info("Starting complete benchmark pipeline")
+    logger.info("=" * 80)
+    
+    # Step 1: Preprocess
+    if not skip_preprocess:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 1: Preprocessing images")
+        logger.info("=" * 80)
+        run_preprocess(
+            input_dir=input_dir,
+            config=config,
+        )
+        logger.info("✓ Preprocessing complete")
+    else:
+        logger.info("Skipping preprocess step")
+    
+    # Step 2: Vision
+    if not skip_vision:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 2: Vision annotation")
+        logger.info("=" * 80)
+        run_vision(
+            config=config,
+            vision_adapter=vision_adapter,
+            adapter_name=vision_adapter_name,
+            wait_for_completion=wait_for_completion,
+        )
+        logger.info("✓ Vision annotation complete")
+    else:
+        logger.info("Skipping vision step")
+    
+    # Step 3: Query Plan
+    if not skip_query_plan:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 3: Building query plan")
+        logger.info("=" * 80)
+        run_query_plan(
+            config=config,
+        )
+        logger.info("✓ Query plan complete")
+    else:
+        logger.info("Skipping query plan step")
+    
+    # Step 4: Judge
+    if not skip_judge:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 4: Judge relevance")
+        logger.info("=" * 80)
+        run_judge(
+            config=config,
+            judge_adapter=judge_adapter,
+            adapter_name=judge_adapter_name,
+            wait_for_completion=wait_for_completion,
+        )
+        logger.info("✓ Judge relevance complete")
+    else:
+        logger.info("Skipping judge step")
+    
+    logger.info("\n" + "=" * 80)
+    logger.info("Pipeline complete!")
+    logger.info("=" * 80)
 
 # -----------------------------
 # Granular Step-by-Step Functions
@@ -883,10 +853,6 @@ def run_judge_submit(
     if judge_adapter is None:
         judge_adapter = JudgeAdapterRegistry.get(adapter_name, config=config)
     
-    client = judge_adapter.get_client(config=config.judge_config)
-    if client is None:
-        raise ValueError("Judge adapter requires a client")
-    
     # Load queries to submit (reconstruct from batch input)
     # For simplicity, we'll reload from query_plan and annotations
     if config.query_plan_jsonl and config.annotations_jsonl:
@@ -924,7 +890,6 @@ def run_judge_submit(
         raise ValueError("config.query_plan_jsonl and config.annotations_jsonl must be set to submit judge batch")
     
     batch_ref = judge_adapter.submit(
-        client=client,
         queries=queries,
         out_jsonl=batch_input_jsonl,
     )
