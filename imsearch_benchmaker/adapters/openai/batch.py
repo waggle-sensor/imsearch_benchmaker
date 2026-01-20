@@ -6,11 +6,13 @@ OpenAI Batch API helpers (submit, poll).
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
+from tqdm import tqdm
 
 from ...framework.io import read_jsonl, write_jsonl, BatchRefs
 
@@ -93,13 +95,143 @@ def submit_batch_shards(
 
 
 def wait_for_batch(client: OpenAI, batch_id: str, poll_s: int = 60) -> Dict[str, object]:
-    while True:
-        b = client.batches.retrieve(batch_id)
-        status = b.status
-        if status in ("completed", "failed", "expired", "canceled"):
-            return b.model_dump() if hasattr(b, "model_dump") else dict(b)
-        time.sleep(poll_s)
+    """
+    Wait for a batch to complete, with progress indicators using tqdm.
+    
+    Args:
+        client: OpenAI client instance
+        batch_id: Batch ID to wait for
+        poll_s: Polling interval in seconds
+        
+    Returns:
+        Batch status dictionary
+    """
+    start_time = time.time()
+    poll_count = 0
+    
+    # Initialize progress bar - start with unknown total, will update when we get request counts
+    pbar = tqdm(
+        desc=f"Batch {batch_id[:12]}...",
+        unit="requests",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}] {postfix}",
+        dynamic_ncols=True,
+    )
+    
+    try:
+        while True:
+            b = client.batches.retrieve(batch_id)
+            status = b.status
+            poll_count += 1
+            elapsed = int(time.time() - start_time)
+            
+            # Update progress bar with status information
+            postfix_dict = {"status": status}
+            
+            if hasattr(b, "request_counts") and b.request_counts:
+                request_counts = b.request_counts.model_dump() if hasattr(b.request_counts, "model_dump") else dict(b.request_counts)
+                total = request_counts.get("total", 0)
+                completed = request_counts.get("completed", 0)
+                failed = request_counts.get("failed", 0)
+                
+                if total > 0:
+                    # Update progress bar with actual request counts
+                    pbar.total = total
+                    pbar.n = completed
+                    pbar.refresh()
+                    
+                    progress_pct = int((completed / total) * 100)
+                    postfix_dict["progress"] = f"{progress_pct}%"
+                    if failed > 0:
+                        postfix_dict["failed"] = failed
+                else:
+                    # No request counts yet, just show polling
+                    pbar.total = None
+                    pbar.n = poll_count
+                    pbar.refresh()
+            else:
+                # No request counts available
+                pbar.total = None
+                pbar.n = poll_count
+                pbar.refresh()
+            
+            # Format postfix string
+            postfix_str = " | ".join([f"{k}: {v}" for k, v in postfix_dict.items()])
+            pbar.set_postfix_str(postfix_str)
+            
+            if status in ("completed", "failed", "expired", "canceled"):
+                elapsed_total = int(time.time() - start_time)
+                # Final update
+                if hasattr(b, "request_counts") and b.request_counts:
+                    request_counts = b.request_counts.model_dump() if hasattr(b.request_counts, "model_dump") else dict(b.request_counts)
+                    total = request_counts.get("total", 0)
+                    completed = request_counts.get("completed", 0)
+                    if total > 0:
+                        pbar.n = completed
+                        pbar.total = total
+                pbar.set_postfix_str(f"status: {status} | {elapsed_total}s")
+                pbar.close()
+                return b.model_dump() if hasattr(b, "model_dump") else dict(b)
+            
+            time.sleep(poll_s)
+    except KeyboardInterrupt:
+        pbar.close()
+        raise
+    except Exception as e:
+        pbar.close()
+        raise
 
+def wait_for_batches(client: OpenAI, batch_refs: List[BatchRefs], poll_s: int = 60) -> List[Dict[str, object]]:
+    """
+    Wait for a list of batches to complete in parallel, showing progress indicators for each.
+    
+    Args:
+        client: OpenAI client instance
+        batch_refs: List of BatchRefs to wait for
+        poll_s: Polling interval in seconds
+        
+    Returns:
+        List of batch status dictionaries, in the same order as batch_refs
+    """
+    if not batch_refs:
+        return []
+    
+    if len(batch_refs) == 1:
+        # Single batch, just use the regular function
+        return [wait_for_batch(client, batch_refs[0].batch_id, poll_s)]
+    
+    # Multiple batches - wait in parallel using threads
+    results: List[Optional[Dict[str, object]]] = [None] * len(batch_refs)
+    threads: List[threading.Thread] = []
+    exceptions: List[Exception] = []
+    
+    def wait_single_batch(index: int, batch_ref: BatchRefs) -> None:
+        """Wait for a single batch and store the result."""
+        try:
+            result = wait_for_batch(client, batch_ref.batch_id, poll_s)
+            results[index] = result
+        except Exception as e:
+            exceptions.append(e)
+            results[index] = None
+    
+    # Start a thread for each batch
+    for i, batch_ref in enumerate(batch_refs):
+        thread = threading.Thread(target=wait_single_batch, args=(i, batch_ref))
+        thread.start()
+        threads.append(thread)
+    
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+    
+    # Check for exceptions
+    if exceptions:
+        raise RuntimeError(f"Errors occurred while waiting for batches: {exceptions}")
+    
+    # Verify all results are present
+    if any(r is None for r in results):
+        raise RuntimeError("Some batches did not complete successfully")
+    
+    return results  # type: ignore
 
 def list_batches(client: OpenAI, active_only: bool = False, limit: int = 50, stage: Optional[str] = None) -> List[Dict[str, Any]]:
     """

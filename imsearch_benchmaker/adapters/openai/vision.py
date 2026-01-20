@@ -247,15 +247,19 @@ class OpenAIVision(Vision):
         return self.client
 
     def wait_for_batch(self, batch_ref: Any) -> None:
-        """Wait for OpenAI batch to complete."""
-        from .batch import wait_for_batch
+        """Wait for OpenAI batch(es) to complete."""
+        from .batch import wait_for_batches
         from ...framework.io import BatchRefs
+        
         if isinstance(batch_ref, BatchRefs):
-            wait_for_batch(self.client, batch_ref.batch_id)
+            batch_refs = [batch_ref]
         elif isinstance(batch_ref, list):
-            for ref in batch_ref:
-                if isinstance(ref, BatchRefs):
-                    wait_for_batch(self.client, ref.batch_id)
+            batch_refs = batch_ref
+        else:
+            raise ValueError("Invalid batch reference type")
+        
+        # Wait for all batches in parallel using the shared wait_for_batches function
+        wait_for_batches(self.client, batch_refs)
 
     def download_batch_results(
         self, batch_ref: Any, output_path: Path, error_path: Optional[Path] = None
