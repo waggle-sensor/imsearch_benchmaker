@@ -49,7 +49,7 @@ def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Di
     for ann in read_jsonl(path):
         iid = ann[config.column_image_id]
         tags = set(ann.get(config.column_tags) or []) if config.column_tags else set()
-        facets = {facet: ann.get(facet) for facet in config.columns_taxonomy}
+        facets = {facet: ann.get(facet) for facet in (list(config.columns_taxonomy) + list(config.columns_boolean))}
         out[iid] = ImageRec(
             image_id=iid,
             facets=facets,
