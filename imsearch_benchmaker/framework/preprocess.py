@@ -11,13 +11,17 @@ for query planning.
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
+import requests
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .io import write_jsonl
+from .io import read_jsonl, write_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
+
+logger = logging.getLogger(__name__)
 
 IMAGE_EXTS = {
     ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"
@@ -358,4 +362,112 @@ def build_seeds_jsonl(
         seed_prefix=seed_prefix,
         config=config,
     )
+
+
+def check_image_urls(
+    images_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+    timeout: int = 10,
+    max_workers: int = 10,
+) -> Dict[str, Any]:
+    """
+    Check if all image URLs in images.jsonl are reachable.
+    
+    Reads images.jsonl and attempts to fetch each image URL to verify accessibility.
+    Uses concurrent requests for efficiency.
+    
+    Args:
+        images_jsonl: Path to images.jsonl file. If None, uses config.images_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        timeout: Request timeout in seconds (default: 10).
+        max_workers: Maximum number of concurrent requests (default: 10).
+        
+    Returns:
+        Dictionary with keys:
+            - total_count: Total number of images checked
+            - success_count: Number of successfully reachable images
+            - failed_count: Number of failed/unreachable images
+            - failed_image_ids: List of image IDs that failed
+            
+    Raises:
+        ValueError: If images_jsonl is not provided and not in config.
+        FileNotFoundError: If images_jsonl file does not exist.
+    """
+    import concurrent.futures
+    
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    images_jsonl = Path(images_jsonl) if images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
+    
+    if images_jsonl is None:
+        raise ValueError("images_jsonl must be provided or set in config.images_jsonl")
+    if not images_jsonl.exists():
+        raise FileNotFoundError(f"Images JSONL file not found: {images_jsonl}")
+    
+    # Read all image rows
+    rows = list(read_jsonl(images_jsonl))
+    total_count = len(rows)
+    
+    if total_count == 0:
+        logger.warning("[PREPROCESS] No images found in images.jsonl")
+        return {
+            "total_count": 0,
+            "success_count": 0,
+            "failed_count": 0,
+            "failed_image_ids": [],
+        }
+    
+    logger.info(f"[PREPROCESS] Checking {total_count} image URLs...")
+    
+    def check_url(row: Dict[str, Any]) -> Tuple[str, bool]:
+        """Check if a single image URL is reachable."""
+        image_id = row.get(config.column_image_id, "")
+        image_url = row.get(config.image_url_temp_column, "")
+        
+        if not image_url:
+            logger.warning(f"[PREPROCESS] Missing image_url for {image_id}")
+            return (image_id, False)
+        
+        try:
+            # Try HEAD first (more efficient), fall back to GET if HEAD is not supported
+            try:
+                response = requests.head(image_url, timeout=timeout, allow_redirects=True)
+            except requests.exceptions.RequestException:
+                # If HEAD fails, try GET with stream=True (only download headers)
+                response = requests.get(image_url, timeout=timeout, allow_redirects=True, stream=True)
+                # Close the connection immediately to avoid downloading the full image
+                response.close()
+            
+            # Accept 2xx and 3xx status codes as success
+            is_reachable = 200 <= response.status_code < 400
+            if not is_reachable:
+                logger.debug(f"[PREPROCESS] Image {image_id} returned status {response.status_code}")
+            return (image_id, is_reachable)
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"[PREPROCESS] Failed to reach {image_id}: {e}")
+            return (image_id, False)
+    
+    # Check URLs concurrently
+    success_count = 0
+    failed_count = 0
+    failed_image_ids = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_row = {executor.submit(check_url, row): row for row in rows}
+        
+        for future in concurrent.futures.as_completed(future_to_row):
+            image_id, is_reachable = future.result()
+            if is_reachable:
+                success_count += 1
+            else:
+                failed_count += 1
+                failed_image_ids.append(image_id)
+    
+    logger.info(f"[PREPROCESS] URL check complete: {success_count}/{total_count} successful, {failed_count} failed")
+    
+    return {
+        "total_count": total_count,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "failed_image_ids": failed_image_ids,
+    }
 

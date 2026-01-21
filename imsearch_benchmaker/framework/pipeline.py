@@ -16,14 +16,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
-from .preprocess import build_images_jsonl, build_seeds_jsonl
+from .preprocess import build_images_jsonl, build_seeds_jsonl, check_image_urls
 from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
 from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
 from .scoring import SimilarityAdapterRegistry
 from .cost import (
     aggregate_cost_summaries,
-    write_cost_summary_csv,
-    CostSummary,
+    write_cost_summary_csv
 )
 from .io import (
     read_jsonl,
@@ -1873,6 +1872,13 @@ def build_cli_parser() -> argparse.ArgumentParser:
     preprocess_parser.add_argument("--num-seeds", type=int, help="Number of seeds")
     preprocess_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
+    # Check image URLs
+    check_urls_parser = subparsers.add_parser("check-urls", help="Check if all image URLs in images.jsonl are reachable")
+    check_urls_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
+    check_urls_parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds (default: 10)")
+    check_urls_parser.add_argument("--max-workers", type=int, default=10, help="Maximum number of concurrent requests (default: 10)")
+    check_urls_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
     # Vision
     vision_parser = subparsers.add_parser("vision", help="Run vision annotation pipeline")
     vision_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
@@ -2201,6 +2207,25 @@ def main() -> None:
         )
         output_path = getattr(args, "out_images_jsonl", None) or config.images_jsonl
         logger.info(f"✅ Preprocess complete -> {output_path}")
+    
+    elif args.command == "check-urls":
+        result = check_image_urls(
+            images_jsonl=getattr(args, "images_jsonl", None),
+            config=config,
+            timeout=getattr(args, "timeout", 10),
+            max_workers=getattr(args, "max_workers", 10),
+        )
+        logger.info("=" * 80)
+        logger.info("Image URL Check Results")
+        logger.info("=" * 80)
+        logger.info(f"Total images: {result['total_count']}")
+        logger.info(f"Successful: {result['success_count']}")
+        logger.info(f"Failed: {result['failed_count']}")
+        if result['failed_image_ids']:
+            logger.info(f"\nFailed image IDs ({len(result['failed_image_ids'])}):")
+            for image_id in result['failed_image_ids']:
+                logger.info(f"  - {image_id}")
+        logger.info("=" * 80)
     
     elif args.command == "vision":
         adapter_name = getattr(args, "adapter", None) or config.vision_config.adapter
