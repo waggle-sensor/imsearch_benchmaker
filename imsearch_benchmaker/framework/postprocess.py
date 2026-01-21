@@ -303,13 +303,13 @@ def generate_random_image_sample(
         images_data = read_jsonl_list(images_jsonl_path)
         for img_row in images_data:
             img_id = img_row.get(config.column_image_id)
-            img_url = img_row.get(config.column_image_url)
+            img_url = img_row.get(config.image_url_temp_column)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
-    elif config.column_image_url in df.columns:
-        cols = [config.column_image_id, config.column_image_url]
+    elif config.image_url_temp_column in df.columns:
+        cols = [config.column_image_id, config.image_url_temp_column]
         for _, row in df[cols].drop_duplicates(subset=[config.column_image_id]).iterrows():
-            image_url_map[row[config.column_image_id]] = row[config.column_image_url]
+            image_url_map[row[config.column_image_id]] = row[config.image_url_temp_column]
 
     if not image_url_map:
         return
@@ -840,7 +840,7 @@ def calculate_similarity_score(
         images_data = read_jsonl_list(images_jsonl_path)
         for img_row in images_data:
             img_id = img_row.get(config.column_image_id)
-            img_url = img_row.get(config.column_image_url)
+            img_url = img_row.get(config.image_url_temp_column)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
     else:
@@ -938,7 +938,7 @@ def huggingface(
         image_url_map: Dict[str, str] = {}
         for img_row in images_data:
             img_id = img_row.get(config.column_image_id)
-            img_url = img_row.get(config.column_image_url)
+            img_url = img_row.get(config.image_url_temp_column)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
 

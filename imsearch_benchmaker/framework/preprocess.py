@@ -194,7 +194,7 @@ def build_row(
     image_url = f"{base}/{img_id}"
     return {
         config.column_image_id: image_id,
-        config.column_image_url: image_url,
+        config.image_url_temp_column: image_url,
         config.column_mime_type: guess_mime_type(image_path),
         config.column_license: meta.license,
         config.column_doi: meta.doi,

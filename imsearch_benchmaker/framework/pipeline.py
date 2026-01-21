@@ -589,7 +589,7 @@ def run_vision_make(
             metadata[config.column_doi] = row[config.column_doi]
         images.append(VisionImage(
             image_id=row[config.column_image_id],
-            image_url=row[config.column_image_url],
+            image_url=row[config.image_url_temp_column],
             metadata=metadata,
         ))
     
@@ -860,11 +860,11 @@ def run_vision_parse(
             metadata[config.column_doi] = row[config.column_doi]
         images.append(VisionImage(
             image_id=row[config.column_image_id],
-            image_url=row[config.column_image_url],
+            image_url=row[config.image_url_temp_column],
             metadata=metadata,
         ))
     
-    # Parse results (reuse logic from run_vision)
+    # Parse results
     annotations = []
     failed_rows = []
     if Path(batch_output_jsonl).exists():
@@ -982,7 +982,7 @@ def run_judge_make(
     if judge_adapter is None:
         judge_adapter = JudgeAdapterRegistry.get(adapter_name, config=config)
     
-    # Load query plan and annotations (reuse logic from run_judge)
+    # Load query plan and annotations
     ann_map = {}
     for row in read_jsonl(annotations_jsonl):
         iid = row.get(config.column_image_id)
@@ -1296,7 +1296,7 @@ def run_judge_parse(
     if judge_adapter is None:
         judge_adapter = JudgeAdapterRegistry.get(adapter_name, config=config)
     
-    # Load annotations and query plan (reuse logic from run_judge)
+    # Load annotations and query plan
     ann_map = {}
     for row in read_jsonl(annotations_jsonl):
         iid = row.get(config.column_image_id)
@@ -1325,7 +1325,7 @@ def run_judge_parse(
             candidate_images=candidate_images,
         ))
     
-    # Parse results (reuse logic from run_judge)
+    # Parse results
     results = []
     failed_rows = []
     if Path(batch_output_jsonl).exists():
@@ -1364,7 +1364,7 @@ def run_judge_parse(
         write_jsonl(failed_path, failed_rows)
         logger.warning(f"[JUDGE] Wrote {len(failed_rows)} failed judge requests to {failed_path}")
     
-    # Write qrels JSONL (reuse logic from run_judge)
+    # Write qrels JSONL
     rows_out = []
     for result in results:
         for judgment in result.judgments:
@@ -1497,7 +1497,7 @@ def run_vision_retry(
                 metadata[config.column_doi] = row[config.column_doi]
             images.append(VisionImage(
                 image_id=image_id,
-                image_url=row[config.column_image_url],
+                image_url=row[config.image_url_temp_column],
                 metadata=metadata,
             ))
     

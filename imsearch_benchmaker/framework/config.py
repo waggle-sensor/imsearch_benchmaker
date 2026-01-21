@@ -138,7 +138,6 @@ class BenchmarkConfig:
         benchmark_author_github: Author GitHub username.
         column_image: Column name for image file paths in the dataset.
         column_image_id: Column name for unique image identifiers.
-        column_image_url: Column name for image URLs.
         column_mime_type: Column name for image MIME types.
         column_license: Column name for image licenses.
         column_doi: Column name for Digital Object Identifiers (DOIs) of the image(s).
@@ -151,6 +150,7 @@ class BenchmarkConfig:
         columns_taxonomy: Dictionary of enum values mapping taxonomy column names to their allowed values.
         columns_boolean: List of boolean column names in the dataset.
         image_base_url: Base URL for constructing image URLs from relative paths.
+        image_url_temp_column: Column name for temporary image URLs used for retrieving images in the pipeline.
         image_root_dir: Input directory containing image files for preprocessing.
         meta_json: Path to metadata JSON file for preprocessing.
         images_jsonl: Path to input images JSONL file.
@@ -193,7 +193,6 @@ class BenchmarkConfig:
     # Dataset column names
     column_image: str = "image"
     column_image_id: str = "image_id"
-    column_image_url: str = "image_url"
     column_mime_type: str = "mime_type"
     column_license: str = "license"
     column_doi: str = "doi"
@@ -205,7 +204,6 @@ class BenchmarkConfig:
     column_confidence: Optional[str] = "confidence"
     columns_taxonomy: Dict[str, List[str]] = field(default_factory=dict)
     columns_boolean: List[str] = field(default_factory=list)
-    image_base_url: Optional[str] = None 
 
     # File paths
     image_root_dir: Optional[str] = None
@@ -244,6 +242,10 @@ class BenchmarkConfig:
     query_plan_neg_nearmiss: Optional[int] = None
     query_plan_neg_easy: Optional[int] = None
     query_plan_random_seed: Optional[int] = None
+
+    # image URL configuration
+    image_base_url: Optional[str] = None 
+    image_url_temp_column: str = "image_url"
 
     def required_qrels_columns(self) -> List[str]:
         """
