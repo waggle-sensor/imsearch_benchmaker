@@ -455,8 +455,14 @@ class BenchmarkConfig:
         judge_config = judge_config_class(**judge_config_data) if judge_config_data else judge_config_class()
         similarity_config = similarity_config_class(**similarity_config_data) if similarity_config_data else similarity_config_class()
         
-        # Filter remaining fields to only include valid field names
+        # Validate and raise error for invalid fields in BenchmarkConfig
         field_names = {f.name for f in fields(cls)}
+        invalid_fields = set(data.keys()) - field_names
+        if invalid_fields:
+            raise ValueError(
+                f"Invalid fields in BenchmarkConfig: {sorted(invalid_fields)}. "
+                f"Valid fields: {sorted(field_names)}"
+            )
         filtered_data = {k: v for k, v in data.items() if k in field_names}
         
         # Add nested configs
