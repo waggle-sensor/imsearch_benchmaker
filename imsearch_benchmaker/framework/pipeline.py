@@ -1860,7 +1860,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "If not provided, uses DEFAULT_BENCHMARK_CONFIG. "
         "Sensitive fields (starting with _) should be set via environment variables."
     )
-    config_default = Path(os.getenv("IMSEARCH_BENCHMAKER_CONFIG")) if os.getenv("IMSEARCH_BENCHMAKER_CONFIG") else None
+    config_default = Path(os.getenv("IMSEARCH_BENCHMAKER_CONFIG_PATH")) if os.getenv("IMSEARCH_BENCHMAKER_CONFIG_PATH") else None
     
     # Preprocess
     preprocess_parser = subparsers.add_parser("preprocess", help="Preprocess images directory")
