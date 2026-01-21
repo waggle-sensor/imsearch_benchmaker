@@ -15,9 +15,13 @@ from ...framework.judge import Judge, JudgeAdapterRegistry
 from ...framework.config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from ...framework.judge_types import JudgeJudgment, JudgeQuery, JudgeResult
 from ...framework.io import write_jsonl
-from ._responses import extract_json_from_response_body
+from ...framework.cost import CostSummary
+from ._responses import extract_json_from_response_body, extract_usage_from_response, calculate_actual_costs
 from .batch import submit_batch, submit_batch_shards, shard_batch_jsonl, list_batches
 from .client import get_openai_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIJudge(Judge):
@@ -265,6 +269,61 @@ class OpenAIJudge(Judge):
             Only returns batches with stage="judge" in metadata
         """
         return list_batches(self.client, active_only=active_only, limit=limit, stage=self.config.judge_config.stage)
+
+    def extract_usage_from_response(self, response_body: Dict[str, Any]) -> Dict[str, int]:
+        """
+        Extract usage/token information from an OpenAI response body.
+        
+        This method delegates to the shared OpenAI implementation, which extracts
+        cached tokens if available (for prompt caching discounts).
+        
+        Args:
+            response_body: Response body dictionary from OpenAI API.
+            
+        Returns:
+            Dictionary with keys: input_tokens, cached_tokens, output_tokens, 
+            image_input_tokens, image_output_tokens.
+        """
+        return extract_usage_from_response(response_body)
+
+    def calculate_actual_costs(
+        self,
+        batch_output_jsonl: Path,
+        num_items: Optional[int] = None,
+    ) -> CostSummary:
+        """
+        Calculate actual costs from batch output JSONL file.
+        
+        Extracts usage data from each successful response and calculates total costs
+        based on pricing from config.
+        
+        Args:
+            batch_output_jsonl: Path to batch output JSONL file.
+            num_items: Number of items processed. If None, will be counted from successful responses.
+            
+        Returns:
+            CostSummary object with calculated costs.
+        """
+        # Get pricing from config
+        if not isinstance(self.config.judge_config, OpenAIJudgeConfig):
+            raise ValueError(
+                "[COST] Judge config is not OpenAIJudgeConfig. "
+                "Cost calculation requires OpenAI-specific config with pricing information."
+            )
+        
+        try:
+            pricing = self.config.judge_config.get_effective_pricing()
+        except ValueError as e:
+            logger.error(f"[COST] {e}")
+            raise
+        
+        return calculate_actual_costs(
+            batch_output_jsonl=batch_output_jsonl,
+            extract_usage_fn=self.extract_usage_from_response,
+            pricing=pricing,
+            phase="judge",
+            num_items=num_items,
+        )
 
     def get_name(self) -> str:
         return "openai_judge"
