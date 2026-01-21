@@ -68,6 +68,48 @@ def is_image_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTS
 
 
+def remove_macos_metadata_files(root: Path) -> int:
+    """
+    Remove macOS metadata files (.DS_Store and ._* files) from a directory tree.
+    
+    macOS creates these files automatically and they're not needed for image processing.
+    
+    Args:
+        root: Root directory to search for and remove metadata files.
+        
+    Returns:
+        Number of metadata files removed.
+    """
+    removed_count = 0
+    
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        
+        # Remove .DS_Store files
+        if path.name == ".DS_Store":
+            try:
+                path.unlink()
+                removed_count += 1
+                logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
+            except OSError as e:
+                logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
+        
+        # Remove files starting with ._
+        elif path.name.startswith("._"):
+            try:
+                path.unlink()
+                removed_count += 1
+                logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
+            except OSError as e:
+                logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
+    
+    if removed_count > 0:
+        logger.info(f"[PREPROCESS] Removed {removed_count} macOS metadata file(s) from {root}")
+    
+    return removed_count
+
+
 def guess_mime_type(path: Path) -> str:
     """
     Guess MIME type for a file path.

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
-from .preprocess import build_images_jsonl, build_seeds_jsonl, check_image_urls
+from .preprocess import build_images_jsonl, build_seeds_jsonl, check_image_urls, remove_macos_metadata_files
 from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
 from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
 from .scoring import SimilarityAdapterRegistry
@@ -89,6 +89,9 @@ def run_preprocess(
         raise ValueError("input_dir must be provided or set in config.image_root_dir")
     if out_images_jsonl is None:
         raise ValueError("out_images_jsonl must be provided or set in config.images_jsonl")
+    
+    # Remove macOS metadata files (.DS_Store and ._* files)
+    remove_macos_metadata_files(input_dir)
     
     rows = build_images_jsonl(
         input_dir=input_dir,
