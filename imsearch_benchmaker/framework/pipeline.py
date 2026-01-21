@@ -388,6 +388,9 @@ def run_all(
     skip_vision: bool = False,
     skip_query_plan: bool = False,
     skip_judge: bool = False,
+    skip_similarity: bool = False,
+    skip_postprocess: bool = False,
+    skip_huggingface: bool = False,
 ) -> None:
     """
     Run all steps of the pipeline: preprocess, vision, query_plan, judge.
@@ -405,6 +408,9 @@ def run_all(
         skip_vision: If True, skip the vision step.
         skip_query_plan: If True, skip the query plan step.
         skip_judge: If True, skip the judge step.
+        skip_similarity: If True, skip the similarity score step.
+        skip_postprocess: If True, skip the postprocess step.
+        skip_huggingface: If True, skip the huggingface upload step.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
@@ -465,16 +471,69 @@ def run_all(
         )
         logger.info("✓ Judge relevance complete")
     else:
-        logger.info("[PIPELINE] Skipping judge step")
+        logger.info("[PIPELINE] Skipping judge step") 
     
-    # Generate cost summary
-    logger.info("\n" + "=" * 80)
-    logger.info("Generating cost summary")
-    logger.info("=" * 80)
-    try:
-        run_cost_summary(config=config)
-    except Exception as e:
-        logger.warning(f"[COST] Failed to generate cost summary: {e}")
+    # Step 5: Similarity Score
+    if not skip_similarity:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 5: Calculating similarity score")
+        logger.info("=" * 80)
+        # Get adapter name from config
+        adapter_name = config.similarity_config.adapter
+        if not adapter_name:
+            logger.warning("[PIPELINE] No similarity adapter available, skipping similarity score calculation")
+            skip_similarity = True
+        
+        if not skip_similarity:
+            # Get column name from config
+            col_name = config.similarity_config.col_name or "similarity_score"
+            
+            calculate_similarity_score(
+                qrels_path=None,  # Use config.qrels_jsonl
+                output_path=None,  # Use config.qrels_with_score_jsonl
+                col_name=col_name,
+                adapter_name=adapter_name,
+                images_jsonl_path=None,  # Use config.images_jsonl
+                config=config,
+            )
+            logger.info("✓ Similarity score complete")
+    else:
+        logger.info("[PIPELINE] Skipping similarity score step")
+    
+    # Step 6: Dataset Summary
+    if not skip_postprocess:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 6: Generating dataset summary")
+        logger.info("=" * 80)
+        generate_dataset_summary(
+            qrels_path=None,  # Use config.qrels_with_score_jsonl or config.qrels_jsonl
+            output_dir=None,  # Use config.summary_output_dir
+            images_jsonl_path=None,  # Use config.images_jsonl
+            config=config,
+        )
+        logger.info("✓ Dataset summary complete")
+    else:
+        logger.info("[PIPELINE] Skipping dataset summary step")
+
+    # Step 7: Hugging Face Upload
+    if not skip_huggingface:
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 7: Uploading dataset to Hugging Face")
+        logger.info("=" * 80)
+        huggingface(
+            qrels_path=None,  # Use config.qrels_with_score_jsonl or config.qrels_jsonl
+            output_dir=None,  # Use config.hf_dataset_dir
+            images_jsonl_path=None,  # Use config.images_jsonl
+            image_root_dir=None,  # Use config.image_root_dir
+            progress_interval=100,
+            repo_id=None,  # Use config._hf_repo_id
+            token=None,  # Use config._hf_token
+            private=None,  # Use config._hf_private
+            config=config,
+        )
+        logger.info("✓ Hugging Face upload complete")
+    else:
+        logger.info("[PIPELINE] Skipping huggingface upload step")
     
     logger.info("\n" + "=" * 80)
     logger.info("Pipeline complete!")
@@ -1967,16 +2026,18 @@ def build_cli_parser() -> argparse.ArgumentParser:
     list_batches_parser.add_argument("--adapter", help="Adapter name (overrides config)")
     list_batches_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
-    # Cost summary
-    cost_summary_parser = subparsers.add_parser("cost-summary", help="Calculate and write cost summary CSV")
-    cost_summary_parser.add_argument("--vision-batch-output-jsonl", type=Path, help="Vision batch output JSONL (or auto-detect from config)")
-    cost_summary_parser.add_argument("--judge-batch-output-jsonl", type=Path, help="Judge batch output JSONL (or auto-detect from config)")
-    cost_summary_parser.add_argument("--output-dir", type=Path, help="Output directory for cost summary CSV (or use config.summary_output_dir)")
-    cost_summary_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
-    list_batches_parser.add_argument("--active-only", action="store_true", help="Only show active batches")
-    list_batches_parser.add_argument("--limit", type=int, default=50, help="Maximum number of batches to list")
-    list_batches_parser.add_argument("--adapter", help="Adapter name (default: from config)")
-    list_batches_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    # All (full pipeline)
+    all_parser = subparsers.add_parser("all", help="Run complete pipeline: preprocess -> vision -> plan -> judge -> similarity -> summary -> upload")
+    all_parser.add_argument("--input-dir", type=Path, help="Images directory (or use config.image_root_dir)")
+    all_parser.add_argument("--skip-preprocess", action="store_true", help="Skip preprocess step")
+    all_parser.add_argument("--skip-vision", action="store_true", help="Skip vision step")
+    all_parser.add_argument("--skip-query-plan", action="store_true", help="Skip query plan step")
+    all_parser.add_argument("--skip-judge", action="store_true", help="Skip judge step")
+    all_parser.add_argument("--skip-similarity", action="store_true", help="Skip similarity score step")
+    all_parser.add_argument("--skip-postprocess", action="store_true", help="Skip postprocess summary step")
+    all_parser.add_argument("--skip-huggingface", action="store_true", help="Skip Hugging Face upload step")
+    all_parser.add_argument("--no-wait", action="store_true", help="Don't wait for batch completion (submit only)")
+    all_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
     return parser
 
@@ -2388,16 +2449,21 @@ def main() -> None:
             adapter_name=getattr(args, "adapter", None),
         )
     
-    # Cost Summary
-    elif args.command == "cost-summary":
-        run_cost_summary(
-            vision_batch_output_jsonl=getattr(args, "vision_batch_output_jsonl", None),
-            judge_batch_output_jsonl=getattr(args, "judge_batch_output_jsonl", None),
-            output_dir=getattr(args, "output_dir", None),
+    # All (full pipeline)
+    elif args.command == "all":
+        run_all(
+            input_dir=getattr(args, "input_dir", None),
             config=config,
+            wait_for_completion=not getattr(args, "no_wait", False),
+            skip_preprocess=getattr(args, "skip_preprocess", False),
+            skip_vision=getattr(args, "skip_vision", False),
+            skip_query_plan=getattr(args, "skip_query_plan", False),
+            skip_judge=getattr(args, "skip_judge", False),
+            skip_similarity=getattr(args, "skip_similarity", False),
+            skip_postprocess=getattr(args, "skip_postprocess", False),
+            skip_huggingface=getattr(args, "skip_huggingface", False),
         )
-        output_path = getattr(args, "output_dir", None) or config.summary_output_dir
-        logger.info(f"✅ Cost summary complete -> {output_path}/cost_summary.csv")
+        logger.info("✅ Full pipeline complete!")
 
 
 if __name__ == "__main__":

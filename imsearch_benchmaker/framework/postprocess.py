@@ -24,6 +24,16 @@ from wordcloud import WordCloud
 from .io import read_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from .scoring import SimilarityAdapterRegistry
+from .cost import (
+    aggregate_cost_summaries,
+    write_cost_summary_csv,
+    CostSummary,
+)
+from .vision import VisionAdapterRegistry
+from .judge import JudgeAdapterRegistry
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def read_jsonl_list(path: Path) -> List[Dict[str, Any]]:
@@ -685,6 +695,78 @@ def generate_dataset_summary(
     generate_summary_statistics(df, output_dir, config)
     generate_random_image_sample(df, output_dir, images_jsonl_path, config=config)
     generate_config_values_table(output_dir, config=config)
+    
+    # Generate cost summary as part of dataset summary
+    try:
+        _generate_cost_summary(output_dir, config)
+    except Exception as e:
+        logger.warning(f"[COST] Failed to generate cost summary: {e}")
+
+
+def _generate_cost_summary(
+    output_dir: Path,
+    config: BenchmarkConfig,
+) -> None:
+    """
+    Generate cost summary CSV for vision and judge phases.
+    
+    This is a helper function called by generate_dataset_summary to include
+    cost information in the dataset summary output.
+    
+    Args:
+        output_dir: Directory to save cost summary CSV.
+        config: BenchmarkConfig instance.
+    """
+    # Determine batch output file paths
+    vision_batch_output_jsonl = None
+    if config.annotations_jsonl:
+        vision_batch_output_jsonl = Path(config.annotations_jsonl).parent / "vision_batch_output.jsonl"
+    
+    judge_batch_output_jsonl = None
+    if config.qrels_jsonl:
+        judge_batch_output_jsonl = Path(config.qrels_jsonl).parent / "judge_batch_output.jsonl"
+    
+    summaries = []
+    
+    # Calculate vision costs
+    if vision_batch_output_jsonl and vision_batch_output_jsonl.exists():
+        try:
+            vision_adapter_name = config.vision_config.adapter
+            if vision_adapter_name:
+                vision_adapter = VisionAdapterRegistry.get(vision_adapter_name, config=config)
+                vision_summary = vision_adapter.calculate_actual_costs(
+                    batch_output_jsonl=vision_batch_output_jsonl,
+                )
+                if vision_summary.num_items > 0:
+                    summaries.append(vision_summary)
+                    logger.info(f"[COST] Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
+        except Exception as e:
+            logger.warning(f"[COST] Failed to calculate vision costs: {e}")
+    
+    # Calculate judge costs
+    if judge_batch_output_jsonl and judge_batch_output_jsonl.exists():
+        try:
+            judge_adapter_name = config.judge_config.adapter
+            if judge_adapter_name:
+                judge_adapter = JudgeAdapterRegistry.get(judge_adapter_name, config=config)
+                judge_summary = judge_adapter.calculate_actual_costs(
+                    batch_output_jsonl=judge_batch_output_jsonl,
+                )
+                if judge_summary.num_items > 0:
+                    summaries.append(judge_summary)
+                    logger.info(f"[COST] Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
+        except Exception as e:
+            logger.warning(f"[COST] Failed to calculate judge costs: {e}")
+    
+    # Aggregate and write CSV
+    if summaries:
+        total_summary = aggregate_cost_summaries(summaries)
+        summaries.append(total_summary)
+        
+        csv_path = output_dir / "cost_summary.csv"
+        write_cost_summary_csv(summaries, csv_path)
+        logger.info(f"[COST] Cost summary written to {csv_path}")
+        logger.info(f"[COST] Total cost: ${total_summary.total_cost:.2f}")
 
 
 def calculate_similarity_score(
