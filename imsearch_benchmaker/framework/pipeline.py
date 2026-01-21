@@ -20,6 +20,11 @@ from .preprocess import build_images_jsonl, build_seeds_jsonl
 from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
 from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
 from .scoring import SimilarityAdapterRegistry
+from .cost import (
+    aggregate_cost_summaries,
+    write_cost_summary_csv,
+    CostSummary,
+)
 from .io import (
     read_jsonl,
     write_jsonl,
@@ -462,6 +467,15 @@ def run_all(
     else:
         logger.info("[PIPELINE] Skipping judge step")
     
+    # Generate cost summary
+    logger.info("\n" + "=" * 80)
+    logger.info("Generating cost summary")
+    logger.info("=" * 80)
+    try:
+        run_cost_summary(config=config)
+    except Exception as e:
+        logger.warning(f"[COST] Failed to generate cost summary: {e}")
+    
     logger.info("\n" + "=" * 80)
     logger.info("Pipeline complete!")
     logger.info("=" * 80)
@@ -847,6 +861,20 @@ def run_vision_parse(
     
     write_jsonl(out_annotations_jsonl, rows_out)
     logger.info(f"[VISION] Parsed {len(annotations)} successful vision annotations, {len(failed_rows)} failed")
+    
+    # Calculate actual costs from batch output
+    try:
+        actual_costs = vision_adapter.calculate_actual_costs(
+            batch_output_jsonl=batch_output_jsonl,
+            num_items=len(annotations),
+        )
+        logger.info(f"[COST] Vision actual costs: ${actual_costs.total_cost:.2f} for {actual_costs.num_items} images "
+                   f"(${actual_costs.cost_per_item:.4f} per image, ${actual_costs.cost_per_token:.8f} per token)")
+        # Store cost summary for later aggregation (we'll save it in run_cost_summary)
+        # For now, just log it
+    except Exception as e:
+        logger.warning(f"[COST] Failed to calculate vision costs: {e}")
+    
     return annotations
 
 
@@ -1309,6 +1337,20 @@ def run_judge_parse(
     
     write_jsonl(out_qrels_jsonl, rows_out)
     logger.info(f"[JUDGE] Parsed {len(results)} successful judge results, {len(failed_rows)} failed")
+    
+    # Calculate actual costs from batch output
+    try:
+        actual_costs = judge_adapter.calculate_actual_costs(
+            batch_output_jsonl=batch_output_jsonl,
+            num_items=len(results),
+        )
+        logger.info(f"[COST] Judge actual costs: ${actual_costs.total_cost:.2f} for {actual_costs.num_items} queries "
+                   f"(${actual_costs.cost_per_item:.4f} per query, ${actual_costs.cost_per_token:.8f} per token)")
+        # Store cost summary for later aggregation (we'll save it in run_cost_summary)
+        # For now, just log it
+    except Exception as e:
+        logger.warning(f"[COST] Failed to calculate judge costs: {e}")
+    
     return results
 
 
@@ -1589,6 +1631,105 @@ def run_judge_retry(
 # -----------------------------
 
 
+def run_cost_summary(
+    vision_batch_output_jsonl: Optional[Path] = None,
+    judge_batch_output_jsonl: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+) -> None:
+    """
+    Calculate and write cost summary CSV for vision and judge phases.
+    
+    Reads batch output files for vision and judge phases, calculates actual costs
+    from usage data, aggregates them, and writes a CSV summary to the summary output directory.
+    
+    Args:
+        vision_batch_output_jsonl: Path to vision batch output JSONL. If None, auto-generated from config.
+        judge_batch_output_jsonl: Path to judge batch output JSONL. If None, auto-generated from config.
+        output_dir: Directory to save cost summary CSV. If None, uses config.summary_output_dir.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Raises:
+        ValueError: If output_dir is not provided and not in config.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Determine output directory
+    if output_dir is None:
+        output_dir = Path(config.summary_output_dir) if config.summary_output_dir else None
+    if output_dir is None:
+        raise ValueError("output_dir must be provided or set in config.summary_output_dir")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Determine batch output file paths
+    if vision_batch_output_jsonl is None:
+        if config.annotations_jsonl:
+            vision_batch_output_jsonl = Path(config.annotations_jsonl).parent / "vision_batch_output.jsonl"
+        else:
+            vision_batch_output_jsonl = None
+    
+    if judge_batch_output_jsonl is None:
+        if config.qrels_jsonl:
+            judge_batch_output_jsonl = Path(config.qrels_jsonl).parent / "judge_batch_output.jsonl"
+        else:
+            judge_batch_output_jsonl = None
+    
+    summaries = []
+    
+    # Calculate vision costs
+    if vision_batch_output_jsonl and Path(vision_batch_output_jsonl).exists():
+        try:
+            # Get vision adapter
+            vision_adapter_name = config.vision_config.adapter
+            if vision_adapter_name:
+                vision_adapter = VisionAdapterRegistry.get(vision_adapter_name, config=config)
+                vision_summary = vision_adapter.calculate_actual_costs(
+                    batch_output_jsonl=vision_batch_output_jsonl,
+                )
+                if vision_summary.num_items > 0:
+                    summaries.append(vision_summary)
+                    logger.info(f"[COST] Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
+            else:
+                logger.warning("[COST] No vision adapter configured")
+        except Exception as e:
+            logger.warning(f"[COST] Failed to calculate vision costs: {e}")
+    else:
+        logger.warning(f"[COST] Vision batch output file not found: {vision_batch_output_jsonl}")
+    
+    # Calculate judge costs
+    if judge_batch_output_jsonl and Path(judge_batch_output_jsonl).exists():
+        try:
+            # Get judge adapter
+            judge_adapter_name = config.judge_config.adapter
+            if judge_adapter_name:
+                judge_adapter = JudgeAdapterRegistry.get(judge_adapter_name, config=config)
+                judge_summary = judge_adapter.calculate_actual_costs(
+                    batch_output_jsonl=judge_batch_output_jsonl,
+                )
+                if judge_summary.num_items > 0:
+                    summaries.append(judge_summary)
+                    logger.info(f"[COST] Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
+            else:
+                logger.warning("[COST] No judge adapter configured")
+        except Exception as e:
+            logger.warning(f"[COST] Failed to calculate judge costs: {e}")
+    else:
+        logger.warning(f"[COST] Judge batch output file not found: {judge_batch_output_jsonl}")
+    
+    # Aggregate and write CSV
+    if summaries:
+        total_summary = aggregate_cost_summaries(summaries)
+        summaries.append(total_summary)
+        
+        csv_path = output_dir / "cost_summary.csv"
+        write_cost_summary_csv(summaries, csv_path)
+        logger.info(f"[COST] Cost summary written to {csv_path}")
+        logger.info(f"[COST] Total cost: ${total_summary.total_cost:.2f}")
+    else:
+        logger.warning("[COST] No cost summaries to write (no batch output files found or all had 0 items)")
+
+
 def run_list_batches(
     active_only: bool = False,
     limit: int = 50,
@@ -1821,6 +1962,17 @@ def build_cli_parser() -> argparse.ArgumentParser:
     
     # List Batches
     list_batches_parser = subparsers.add_parser("list-batches", help="List OpenAI batches")
+    list_batches_parser.add_argument("--active-only", action="store_true", help="Only show active batches")
+    list_batches_parser.add_argument("--limit", type=int, default=50, help="Maximum number of batches to return per adapter")
+    list_batches_parser.add_argument("--adapter", help="Adapter name (overrides config)")
+    list_batches_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    # Cost summary
+    cost_summary_parser = subparsers.add_parser("cost-summary", help="Calculate and write cost summary CSV")
+    cost_summary_parser.add_argument("--vision-batch-output-jsonl", type=Path, help="Vision batch output JSONL (or auto-detect from config)")
+    cost_summary_parser.add_argument("--judge-batch-output-jsonl", type=Path, help="Judge batch output JSONL (or auto-detect from config)")
+    cost_summary_parser.add_argument("--output-dir", type=Path, help="Output directory for cost summary CSV (or use config.summary_output_dir)")
+    cost_summary_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     list_batches_parser.add_argument("--active-only", action="store_true", help="Only show active batches")
     list_batches_parser.add_argument("--limit", type=int, default=50, help="Maximum number of batches to list")
     list_batches_parser.add_argument("--adapter", help="Adapter name (default: from config)")
@@ -2235,6 +2387,17 @@ def main() -> None:
             config=config,
             adapter_name=getattr(args, "adapter", None),
         )
+    
+    # Cost Summary
+    elif args.command == "cost-summary":
+        run_cost_summary(
+            vision_batch_output_jsonl=getattr(args, "vision_batch_output_jsonl", None),
+            judge_batch_output_jsonl=getattr(args, "judge_batch_output_jsonl", None),
+            output_dir=getattr(args, "output_dir", None),
+            config=config,
+        )
+        output_path = getattr(args, "output_dir", None) or config.summary_output_dir
+        logger.info(f"✅ Cost summary complete -> {output_path}/cost_summary.csv")
 
 
 if __name__ == "__main__":

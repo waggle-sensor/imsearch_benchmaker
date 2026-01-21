@@ -16,6 +16,7 @@ from typing import Dict, Iterable, List, Type, Any, Optional
 
 from .judge_types import JudgeQuery, JudgeResult
 from .config import BenchmarkConfig, JudgeConfig
+from .cost import CostSummary
 
 
 class Judge(ABC):
@@ -149,6 +150,45 @@ class Judge(ABC):
             List of batch dictionaries (format depends on adapter implementation)
         """
         return []
+
+    @abstractmethod
+    def extract_usage_from_response(self, response_body: Dict[str, Any]) -> Dict[str, int]:
+        """
+        Extract usage/token information from a provider response body.
+        
+        This method should extract token usage data from the response structure
+        in a provider-specific format.
+        
+        Args:
+            response_body: Response body dictionary from the provider API.
+            
+        Returns:
+            Dictionary with keys: input_tokens, cached_tokens (optional), output_tokens, 
+            image_input_tokens, image_output_tokens. All values default to 0 if usage data is not found.
+            cached_tokens is optional and only needed if the provider supports prompt caching.
+        """
+        pass
+
+    @abstractmethod
+    def calculate_actual_costs(
+        self,
+        batch_output_jsonl: Path,
+        num_items: Optional[int] = None,
+    ) -> CostSummary:
+        """
+        Calculate actual costs from batch output JSONL file.
+        
+        Extracts usage data from each successful response and calculates total costs
+        based on pricing from config.
+        
+        Args:
+            batch_output_jsonl: Path to batch output JSONL file.
+            num_items: Number of items processed. If None, will be counted from successful responses.
+            
+        Returns:
+            CostSummary object with calculated costs.
+        """
+        pass
 
 class JudgeAdapterRegistry:
     """
