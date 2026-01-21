@@ -38,11 +38,7 @@ from .vision_types import VisionImage, VisionAnnotation
 from .judge_types import JudgeQuery, JudgeResult
 from typing import Set
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# Logging will be configured in main() after config is loaded
 logger = logging.getLogger(__name__)
 
 
@@ -145,14 +141,14 @@ def run_vision(
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
 
-    logger.info("=" * 80)
-    logger.info("Starting vision pipeline")
-    logger.info("=" * 80)
+    print("=" * 80)
+    print("Starting vision pipeline")
+    print("=" * 80)
     
     # Step 1: Make batch input
-    logger.info("\n" + "=" * 80)
-    logger.info("Step a: Making vision batch input")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step a: Making vision batch input")
+    print("=" * 80)
     batch_input_jsonl = run_vision_make(
         images_jsonl=images_jsonl,
         config=config,
@@ -161,9 +157,9 @@ def run_vision(
     )
     
     # Step 2: Submit batch
-    logger.info("\n" + "=" * 80)
-    logger.info("Step b: Submitting vision batch")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step b: Submitting vision batch")
+    print("=" * 80)
     batch_id_file = batch_input_jsonl.parent / ".vision_batch_id"
     run_vision_submit(
         batch_input_jsonl=batch_input_jsonl,
@@ -175,9 +171,9 @@ def run_vision(
     
     if wait_for_completion:
         # Step 3: Wait for completion
-        logger.info("\n" + "=" * 80)
-        logger.info("Step c: Waiting for vision batch completion")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step c: Waiting for vision batch completion")
+        print("=" * 80)
         run_vision_wait(
             batch_id_file=batch_id_file,
             config=config,
@@ -186,9 +182,9 @@ def run_vision(
         )
         
         # Step 4: Download results
-        logger.info("\n" + "=" * 80)
-        logger.info("Step d: Downloading vision batch results")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step d: Downloading vision batch results")
+        print("=" * 80)
         run_vision_download(
             batch_id_file=batch_id_file,
             batch_output_jsonl=batch_output_jsonl,
@@ -199,9 +195,9 @@ def run_vision(
         )
     
     # Step 5: Parse results
-    logger.info("\n" + "=" * 80)
-    logger.info("Step e: Parsing vision batch results")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step e: Parsing vision batch results")
+    print("=" * 80)
     annotations = run_vision_parse(
         batch_output_jsonl=batch_output_jsonl,
         images_jsonl=images_jsonl,
@@ -211,9 +207,9 @@ def run_vision(
         adapter_name=adapter_name,
     )
     
-    logger.info("\n" + "=" * 80)
-    logger.info("Vision pipeline complete!")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Vision pipeline complete!")
+    print("=" * 80)
     
     return annotations
 
@@ -300,14 +296,14 @@ def run_judge(
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
 
-    logger.info("=" * 80)
-    logger.info("Starting judge pipeline")
-    logger.info("=" * 80)
+    print("=" * 80)
+    print("Starting judge pipeline")
+    print("=" * 80)
     
     # Step 1: Make batch input
-    logger.info("\n" + "=" * 80)
-    logger.info("Step a: Making judge batch input")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step a: Making judge batch input")
+    print("=" * 80)
     batch_input_jsonl = run_judge_make(
         query_plan_jsonl=query_plan_jsonl,
         annotations_jsonl=annotations_jsonl,
@@ -317,9 +313,9 @@ def run_judge(
     )
     
     # Step 2: Submit batch
-    logger.info("\n" + "=" * 80)
-    logger.info("Step b: Submitting judge batch")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step b: Submitting judge batch")
+    print("=" * 80)
     batch_id_file = batch_input_jsonl.parent / ".judge_batch_id"
     run_judge_submit(
         batch_input_jsonl=batch_input_jsonl,
@@ -331,9 +327,9 @@ def run_judge(
     
     if wait_for_completion:
         # Step 3: Wait for completion
-        logger.info("\n" + "=" * 80)
-        logger.info("Step c: Waiting for judge batch completion")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step c: Waiting for judge batch completion")
+        print("=" * 80)
         run_judge_wait(
             batch_id_file=batch_id_file,
             config=config,
@@ -342,9 +338,9 @@ def run_judge(
         )
         
         # Step 4: Download results
-        logger.info("\n" + "=" * 80)
-        logger.info("Step d: Downloading judge batch results")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step d: Downloading judge batch results")
+        print("=" * 80)
         run_judge_download(
             batch_id_file=batch_id_file,
             batch_output_jsonl=batch_output_jsonl,
@@ -355,9 +351,9 @@ def run_judge(
         )
     
     # Step 5: Parse results
-    logger.info("\n" + "=" * 80)
-    logger.info("Step e: Parsing judge batch results")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Step e: Parsing judge batch results")
+    print("=" * 80)
     results = run_judge_parse(
         batch_output_jsonl=batch_output_jsonl,
         query_plan_jsonl=query_plan_jsonl,
@@ -368,9 +364,9 @@ def run_judge(
         adapter_name=adapter_name,
     )
     
-    logger.info("\n" + "=" * 80)
-    logger.info("Judge pipeline complete!")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Judge pipeline complete!")
+    print("=" * 80)
     
     return results
 
@@ -412,28 +408,28 @@ def run_all(
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
-    logger.info("=" * 80)
-    logger.info("Starting complete benchmark pipeline")
-    logger.info("=" * 80)
+    print("=" * 80)
+    print("Starting complete benchmark pipeline")
+    print("=" * 80)
     
     # Step 1: Preprocess
     if not skip_preprocess:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 1: Preprocessing images")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 1: Preprocessing images")
+        print("=" * 80)
         run_preprocess(
             input_dir=input_dir,
             config=config,
         )
         logger.info("✓ Preprocessing complete")
     else:
-        logger.info("[PIPELINE]Skipping preprocess step")
+        logger.info("[PIPELINE] Skipping preprocess step")
     
     # Step 2: Vision
     if not skip_vision:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 2: Vision annotation")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 2: Vision annotation")
+        print("=" * 80)
         run_vision(
             config=config,
             vision_adapter=vision_adapter,
@@ -446,9 +442,9 @@ def run_all(
     
     # Step 3: Query Plan
     if not skip_query_plan:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 3: Building query plan")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 3: Building query plan")
+        print("=" * 80)
         run_query_plan(
             config=config,
         )
@@ -458,9 +454,9 @@ def run_all(
     
     # Step 4: Judge
     if not skip_judge:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 4: Judge relevance")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 4: Judge relevance")
+        print("=" * 80)
         run_judge(
             config=config,
             judge_adapter=judge_adapter,
@@ -473,9 +469,9 @@ def run_all(
     
     # Step 5: Similarity Score
     if not skip_similarity:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 5: Calculating similarity score")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 5: Calculating similarity score")
+        print("=" * 80)
         # Get adapter name from config
         adapter_name = config.similarity_config.adapter
         if not adapter_name:
@@ -500,9 +496,9 @@ def run_all(
     
     # Step 6: Dataset Summary
     if not skip_postprocess:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 6: Generating dataset summary")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 6: Generating dataset summary")
+        print("=" * 80)
         generate_dataset_summary(
             qrels_path=None,  # Use config.qrels_with_score_jsonl or config.qrels_jsonl
             output_dir=None,  # Use config.summary_output_dir
@@ -515,9 +511,9 @@ def run_all(
 
     # Step 7: Hugging Face Upload
     if not skip_huggingface:
-        logger.info("\n" + "=" * 80)
-        logger.info("Step 7: Uploading dataset to Hugging Face")
-        logger.info("=" * 80)
+        print("\n" + "=" * 80)
+        print("Step 7: Uploading dataset to Hugging Face")
+        print("=" * 80)
         huggingface(
             qrels_path=None,  # Use config.qrels_with_score_jsonl or config.qrels_jsonl
             output_dir=None,  # Use config.hf_dataset_dir
@@ -533,9 +529,9 @@ def run_all(
     else:
         logger.info("[PIPELINE] Skipping huggingface upload step")
     
-    logger.info("\n" + "=" * 80)
-    logger.info("Pipeline complete!")
-    logger.info("=" * 80)
+    print("\n" + "=" * 80)
+    print("Pipeline complete!")
+    print("=" * 80)
 
 # -----------------------------
 # Granular Step-by-Step Functions
@@ -2193,6 +2189,15 @@ def main() -> None:
             logger.error(f"Failed to load config from {args.config}: {e}")
             raise
     
+    # Configure logging based on config
+    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,  # Override any existing configuration
+    )
+    
     if args.command == "preprocess":
         run_preprocess(
             input_dir=getattr(args, "input_dir", None),
@@ -2214,17 +2219,17 @@ def main() -> None:
             timeout=getattr(args, "timeout", 10),
             max_workers=getattr(args, "max_workers", 10),
         )
-        logger.info("=" * 80)
-        logger.info("Image URL Check Results")
-        logger.info("=" * 80)
-        logger.info(f"Total images: {result['total_count']}")
-        logger.info(f"Successful: {result['success_count']}")
-        logger.info(f"Failed: {result['failed_count']}")
+        print("=" * 80)
+        print("Image URL Check Results")
+        print("=" * 80)
+        print(f"Total images: {result['total_count']}")
+        print(f"Successful: {result['success_count']}")
+        print(f"Failed: {result['failed_count']}")
         if result['failed_image_ids']:
-            logger.info(f"\nFailed image IDs ({len(result['failed_image_ids'])}):")
+            print(f"\nFailed image IDs ({len(result['failed_image_ids'])}):")
             for image_id in result['failed_image_ids']:
-                logger.info(f"  - {image_id}")
-        logger.info("=" * 80)
+                print(f"  - {image_id}")
+        print("=" * 80)
     
     elif args.command == "vision":
         adapter_name = getattr(args, "adapter", None) or config.vision_config.adapter

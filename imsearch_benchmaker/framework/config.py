@@ -197,6 +197,7 @@ class BenchmarkConfig:
         query_plan_neg_nearmiss: Number of near-miss negative examples per query.
         query_plan_neg_easy: Number of easy negative examples per query.
         query_plan_random_seed: Random seed for reproducible query planning.
+        log_level: Logging level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
     """
 
     # Benchmark metadata
@@ -207,6 +208,9 @@ class BenchmarkConfig:
     benchmark_author_affiliation: Optional[str] = None
     benchmark_author_orcid: Optional[str] = None
     benchmark_author_github: Optional[str] = None
+    
+    # Logging configuration
+    log_level: str = "INFO"
     
     # Dataset column names
     column_image: str = "image"
