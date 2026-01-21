@@ -1,7 +1,7 @@
 """
 postprocess.py
 
-Post-processing utilities for dataset analysis and CLIPScore calculation.
+Post-processing utilities for dataset analysis and similarity score calculation.
 """
 
 from __future__ import annotations
@@ -354,36 +354,37 @@ def generate_random_image_sample(
     plt.close()
 
 
-def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
-    if "clip_score" not in df.columns:
+def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    col_name = config.similarity_config.col_name
+    if col_name not in df.columns:
         return
 
-    clipscore_df = df[df["clip_score"].notna()].copy()
-    if len(clipscore_df) == 0:
+    similarity_score_df = df[df[col_name].notna()].copy()
+    if len(similarity_score_df) == 0:
         return
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    axes[0, 0].hist(clipscore_df["clip_score"].dropna(), bins=50, color="steelblue", edgecolor="black", alpha=0.7)
-    axes[0, 0].set_title("CLIP Score Distribution", fontsize=14, fontweight="bold")
-    axes[0, 0].set_xlabel("CLIP Score", fontsize=12)
+    axes[0, 0].hist(similarity_score_df[col_name].dropna(), bins=50, color="steelblue", edgecolor="black", alpha=0.7)
+    axes[0, 0].set_title(f"{col_name} Distribution", fontsize=14, fontweight="bold")
+    axes[0, 0].set_xlabel(col_name, fontsize=12)
     axes[0, 0].set_ylabel("Frequency", fontsize=12)
-    axes[0, 0].axvline(clipscore_df["clip_score"].mean(), color="red", linestyle="--",
-                       label=f"Mean: {clipscore_df['clip_score'].mean():.3f}")
-    axes[0, 0].axvline(clipscore_df["clip_score"].median(), color="green", linestyle="--",
-                       label=f"Median: {clipscore_df['clip_score'].median():.3f}")
+    axes[0, 0].axvline(similarity_score_df[col_name].mean(), color="red", linestyle="--",
+                       label=f"Mean: {similarity_score_df[col_name].mean():.3f}")
+    axes[0, 0].axvline(similarity_score_df[col_name].median(), color="green", linestyle="--",
+                       label=f"Median: {similarity_score_df[col_name].median():.3f}")
     axes[0, 0].legend()
     axes[0, 0].grid(axis="y", alpha=0.3)
 
-    if config.column_relevance in clipscore_df.columns:
-        relevant_scores = clipscore_df[clipscore_df[config.column_relevance] == 1]["clip_score"].dropna()
-        not_relevant_scores = clipscore_df[clipscore_df[config.column_relevance] == 0]["clip_score"].dropna()
+    if config.column_relevance in similarity_score_df.columns:  
+        relevant_scores = similarity_score_df[similarity_score_df[config.column_relevance] == 1][col_name].dropna()
+        not_relevant_scores = similarity_score_df[similarity_score_df[config.column_relevance] == 0][col_name].dropna()
         box_data = [not_relevant_scores, relevant_scores]
         box_labels = ["Not Relevant (0)", "Relevant (1)"]
         bp = axes[0, 1].boxplot(box_data, tick_labels=box_labels, patch_artist=True)
         bp["boxes"][0].set_facecolor("#ff9999")
         bp["boxes"][1].set_facecolor("#66b3ff")
-        axes[0, 1].set_title("CLIP Score Distribution by Relevance", fontsize=14, fontweight="bold")
-        axes[0, 1].set_ylabel("CLIP Score", fontsize=12)
+        axes[0, 1].set_title(f"{col_name} Distribution by Relevance", fontsize=14, fontweight="bold")
+        axes[0, 1].set_ylabel(col_name, fontsize=12)
         axes[0, 1].grid(axis="y", alpha=0.3)
         if len(not_relevant_scores) > 0:
             axes[0, 1].plot(1, not_relevant_scores.mean(), "rD", markersize=10, label="Mean")
@@ -393,78 +394,78 @@ def generate_clipscore_analysis(df: pd.DataFrame, output_dir: Path, config: Benc
     else:
         axes[0, 1].text(0.5, 0.5, "Relevance label not available",
                         ha="center", va="center", transform=axes[0, 1].transAxes)
-        axes[0, 1].set_title("CLIP Score Distribution by Relevance", fontsize=14, fontweight="bold")
+        axes[0, 1].set_title(f"{col_name} Distribution by Relevance", fontsize=14, fontweight="bold")
 
-    if config.column_relevance in clipscore_df.columns:
-        clipscore_df["relevance_label_str"] = clipscore_df[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
-        sns.violinplot(data=clipscore_df, x="relevance_label_str", y="clip_score", ax=axes[1, 0],
+    if config.column_relevance in similarity_score_df.columns:
+        similarity_score_df["relevance_label_str"] = similarity_score_df[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
+        sns.violinplot(data=similarity_score_df, x="relevance_label_str", y=col_name, ax=axes[1, 0],
                        hue="relevance_label_str", palette=["#ff9999", "#66b3ff"], legend=False)
-        axes[1, 0].set_title("CLIP Score Distribution (Violin Plot)", fontsize=14, fontweight="bold")
+        axes[1, 0].set_title(f"{col_name} Distribution (Violin Plot)", fontsize=14, fontweight="bold")
         axes[1, 0].set_xlabel("Relevance Label", fontsize=12)
-        axes[1, 0].set_ylabel("CLIP Score", fontsize=12)
+        axes[1, 0].set_ylabel(col_name, fontsize=12)
         axes[1, 0].grid(axis="y", alpha=0.3)
     else:
         axes[1, 0].axis("off")
 
-    sorted_scores = np.sort(clipscore_df["clip_score"].dropna())
+    sorted_scores = np.sort(similarity_score_df[col_name].dropna())
     cumulative = np.arange(1, len(sorted_scores) + 1) / len(sorted_scores)
     axes[1, 1].plot(sorted_scores, cumulative, linewidth=2, color="steelblue")
-    axes[1, 1].set_title("Cumulative Distribution of CLIP Scores", fontsize=14, fontweight="bold")
-    axes[1, 1].set_xlabel("CLIP Score", fontsize=12)
+    axes[1, 1].set_title(f"Cumulative Distribution of {col_name}", fontsize=14, fontweight="bold")
+    axes[1, 1].set_xlabel(col_name, fontsize=12)
     axes[1, 1].set_ylabel("Cumulative Probability", fontsize=12)
     axes[1, 1].grid(alpha=0.3)
-    axes[1, 1].axvline(clipscore_df["clip_score"].median(), color="red", linestyle="--",
-                       label=f"Median: {clipscore_df['clip_score'].median():.3f}")
+    axes[1, 1].axvline(similarity_score_df[col_name].median(), color="red", linestyle="--",
+                       label=f"Median: {similarity_score_df[col_name].median():.3f}")
     axes[1, 1].legend()
 
     plt.tight_layout()
-    plt.savefig(output_dir / "clipscore_analysis.png", dpi=300, bbox_inches="tight")
+    plt.savefig(output_dir / f"{col_name}_analysis.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-    if config.column_relevance in clipscore_df.columns:
-        stats_by_relevance = clipscore_df.groupby(config.column_relevance)["clip_score"].agg(
+    if config.column_relevance in similarity_score_df.columns:
+        stats_by_relevance = similarity_score_df.groupby(config.column_relevance)[col_name].agg(
             ["count", "mean", "median", "std", "min", "max"]
         ).reset_index()
         stats_by_relevance[config.column_relevance] = stats_by_relevance[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
         stats_by_relevance.columns = ["Relevance Label", "Count", "Mean", "Median", "Std Dev", "Min", "Max"]
-        stats_by_relevance.to_csv(output_dir / "clipscore_stats_by_relevance.csv", index=False)
+        stats_by_relevance.to_csv(output_dir / f"{col_name}_stats_by_relevance.csv", index=False)
 
     overall_stats = {
-        "Total Rows": len(clipscore_df),
-        "Mean CLIP Score": f"{clipscore_df['clip_score'].mean():.4f}",
-        "Median CLIP Score": f"{clipscore_df['clip_score'].median():.4f}",
-        "Std Dev": f"{clipscore_df['clip_score'].std():.4f}",
-        "Min CLIP Score": f"{clipscore_df['clip_score'].min():.4f}",
-        "Max CLIP Score": f"{clipscore_df['clip_score'].max():.4f}",
-        "25th Percentile": f"{clipscore_df['clip_score'].quantile(0.25):.4f}",
-        "75th Percentile": f"{clipscore_df['clip_score'].quantile(0.75):.4f}",
+        "Total Rows": len(similarity_score_df),
+        "Mean {col_name}": f"{similarity_score_df[col_name].mean():.4f}",
+        "Median {col_name}": f"{similarity_score_df[col_name].median():.4f}",
+        "Std Dev": f"{similarity_score_df[col_name].std():.4f}",
+        "Min {col_name}": f"{similarity_score_df[col_name].min():.4f}",
+        "Max {col_name}": f"{similarity_score_df[col_name].max():.4f}",
+        "25th Percentile": f"{similarity_score_df[col_name].quantile(0.25):.4f}",
+        "75th Percentile": f"{similarity_score_df[col_name].quantile(0.75):.4f}",
     }
 
-    if config.column_relevance in clipscore_df.columns:
-        relevant_df = clipscore_df[clipscore_df[config.column_relevance] == 1]
-        not_relevant_df = clipscore_df[clipscore_df[config.column_relevance] == 0]
+    if config.column_relevance in similarity_score_df.columns:
+        relevant_df = similarity_score_df[similarity_score_df[config.column_relevance] == 1]
+        not_relevant_df = similarity_score_df[similarity_score_df[config.column_relevance] == 0]
         if len(relevant_df) > 0:
-            overall_stats["Mean CLIP Score (Relevant)"] = f"{relevant_df['clip_score'].mean():.4f}"
+            overall_stats["Mean {col_name} (Relevant)"] = f"{relevant_df[col_name].mean():.4f}"
         if len(not_relevant_df) > 0:
-            overall_stats["Mean CLIP Score (Not Relevant)"] = f"{not_relevant_df['clip_score'].mean():.4f}"
+            overall_stats["Mean {col_name} (Not Relevant)"] = f"{not_relevant_df[col_name].mean():.4f}"
 
     stats_df = pd.DataFrame(list(overall_stats.items()), columns=["Metric", "Value"])
-    stats_df.to_csv(output_dir / "clipscore_overall_stats.csv", index=False)
+    stats_df.to_csv(output_dir / f"{col_name}_overall_stats.csv", index=False)
 
-    if config.column_query_id in clipscore_df.columns:
-        query_clipscore_stats = clipscore_df.groupby(config.column_query_id)["clip_score"].agg(["mean", "std", "count"]).reset_index()
-        query_clipscore_stats.columns = ["Query ID", "Mean CLIP Score", "Std Dev", "Count"]
-        query_clipscore_stats = query_clipscore_stats.sort_values("Mean CLIP Score", ascending=False)
+    if config.column_query_id in similarity_score_df.columns:
+        query_similarity_score_stats = similarity_score_df.groupby(config.column_query_id)[col_name].agg(["mean", "std", "count"]).reset_index()
+        query_similarity_score_stats.columns = ["Query ID", "Mean {col_name}", "Std Dev", "Count"]
+        query_similarity_score_stats = query_similarity_score_stats.sort_values("Mean {col_name}", ascending=False)
         fig, ax = plt.subplots(figsize=(14, 8))
-        ax.bar(range(len(query_clipscore_stats)), query_clipscore_stats["Mean CLIP Score"], color="coral")
-        ax.set_title("Mean CLIP Score per Query", fontsize=14, fontweight="bold")
-        ax.set_xlabel("Query (sorted by mean CLIP score)", fontsize=12)
-        ax.set_ylabel("Mean CLIP Score", fontsize=12)
+        ax.bar(range(len(query_similarity_score_stats)), query_similarity_score_stats["Mean {col_name}"], color="coral")
+        ax.set_title(f"Mean {col_name} per Query", fontsize=14, fontweight="bold")
+        ax.set_xlabel("Query (sorted by mean {col_name})", fontsize=12)
+        ax.set_ylabel(f"Mean {col_name}", fontsize=12)
         ax.grid(axis="y", alpha=0.3)
         plt.tight_layout()
-        plt.savefig(output_dir / "clipscore_by_query.png", dpi=300, bbox_inches="tight")
+        plt.savefig(output_dir / f"{col_name}_by_query.png", dpi=300, bbox_inches="tight")
         plt.close()
-        query_clipscore_stats.to_csv(output_dir / "clipscore_by_query_stats.csv", index=False)
+        query_similarity_score_stats.to_csv(output_dir / f"{col_name}_by_query_stats.csv", index=False)
 
 
 def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
@@ -679,7 +680,7 @@ def generate_dataset_summary(
     generate_relevance_overview(df, output_dir, config)
     generate_relevance_by_categorical(df, output_dir, config)
     generate_query_text_length_distribution(df, output_dir, config)
-    generate_clipscore_analysis(df, output_dir, config)
+    generate_similarity_score_analysis(df, output_dir, config)
     generate_confidence_analysis(df, output_dir, config)
     generate_summary_statistics(df, output_dir, config)
     generate_random_image_sample(df, output_dir, images_jsonl_path, config=config)

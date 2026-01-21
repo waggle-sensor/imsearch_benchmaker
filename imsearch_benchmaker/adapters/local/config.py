@@ -21,4 +21,5 @@ class CLIPConfig(SimilarityConfig):
     device: Optional[str] = "auto"
     torch_dtype: Optional[str] = None
     use_safetensors: Optional[bool] = True
+    col_name: Optional[str] = "clip_score"
 
