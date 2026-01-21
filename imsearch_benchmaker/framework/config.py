@@ -2,6 +2,10 @@
 config.py
 
 Benchmark configuration shared across framework utilities.
+
+This module provides the core configuration classes for the imsearch_benchmaker framework,
+including BenchmarkConfig which centralizes all benchmark settings, column names, file paths,
+and adapter configurations. Supports loading from TOML or JSON files.
 """
 
 from __future__ import annotations
@@ -33,6 +37,21 @@ T = TypeVar("T", bound="BenchmarkConfig")
 class VisionConfig:
     """
     Configuration for vision annotation adapters.
+    
+    This class holds all configuration parameters specific to vision annotation,
+    including model settings, prompts, batch processing limits, and adapter selection.
+    
+    Attributes:
+        adapter: Name of the vision adapter to use (e.g., "openai"). If None, adapter must be specified elsewhere.
+        model: Model identifier for the vision service (e.g., "gpt-4o").
+        system_prompt: System prompt template for vision annotation requests.
+        user_prompt: User prompt template for vision annotation requests.
+        max_output_tokens: Maximum number of output tokens allowed in vision responses.
+        reasoning_effort: Reasoning effort level (e.g., "low", "medium", "high") for models that support it.
+        image_detail: Image detail level for processing (e.g., "low", "high").
+        max_images_per_batch: Maximum number of images to include in a single batch submission.
+        max_concurrent_batches: Maximum number of batches to submit concurrently.
+        stage: Stage identifier for batch metadata (default: "vision").
     """
     
     adapter: Optional[str] = None
@@ -44,13 +63,28 @@ class VisionConfig:
     image_detail: Optional[str] = None
     max_images_per_batch: Optional[int] = None
     max_concurrent_batches: Optional[int] = None
-    stage: str = "vision"
+    stage: Optional[str] = "vision"
 
 
 @dataclass(frozen=True)
 class JudgeConfig:
     """
     Configuration for judge adapters.
+    
+    This class holds all configuration parameters specific to relevance judgment,
+    including model settings, prompts, batch processing limits, and adapter selection.
+    
+    Attributes:
+        adapter: Name of the judge adapter to use (e.g., "openai"). If None, adapter must be specified elsewhere.
+        model: Model identifier for the judge service (e.g., "gpt-4o").
+        system_prompt: System prompt template for judge requests.
+        user_prompt: User prompt template for judge requests.
+        max_output_tokens: Maximum number of output tokens allowed in judge responses.
+        reasoning_effort: Reasoning effort level (e.g., "low", "medium", "high") for models that support it.
+        max_queries_per_batch: Maximum number of queries to include in a single batch submission.
+        max_candidates: Maximum number of candidate images to include per query in judge requests.
+        max_concurrent_batches: Maximum number of batches to submit concurrently.
+        stage: Stage identifier for batch metadata (default: "judge").
     """
     
     adapter: Optional[str] = None
@@ -62,29 +96,92 @@ class JudgeConfig:
     max_queries_per_batch: Optional[int] = None
     max_candidates: Optional[int] = None
     max_concurrent_batches: Optional[int] = None
-    stage: str = "judge"
+    stage: Optional[str] = "judge"
 
 
 @dataclass(frozen=True)
 class SimilarityConfig:
     """
     Configuration for similarity scoring adapters.
+    
+    This class holds all configuration parameters specific to similarity scoring,
+    such as CLIP-based image-text similarity computation.
+    
+    Attributes:
+        adapter: Name of the similarity adapter to use (e.g., "local_clip"). If None, adapter must be specified elsewhere.
+        model: Model identifier for similarity computation (e.g., "openai/clip-vit-base-patch32").
+        col_name: Column name to use for similarity scores in the output dataset (default: "similarity_score").
     """
     
     adapter: Optional[str] = None
     model: Optional[str] = None
-    col_name: Optional[str] = None
+    col_name: Optional[str] = "similarity_score"
 
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
     """
-    Defines column names and categorical metadata for a benchmark.
-    Sensitive keys should start with an underscore (_).
-    Any variable that starts with "column_" or "columns_" is considered a column in the final benchmarkdataset.
+    Central configuration class for image search benchmark creation.
+    
+    This class defines all column names, file paths, adapter configurations, and benchmark
+    metadata. Sensitive fields (API keys, tokens) should start with an underscore (_) and
+    will be excluded from exports. Any variable starting with "column_" or "columns_" is
+    considered a column in the final benchmark dataset.
+    
+    Attributes:
+        benchmark_name: Name of the benchmark dataset.
+        benchmark_description: Description of the benchmark dataset.
+        benchmark_author: Author name for the benchmark.
+        benchmark_author_email: Author email address.
+        benchmark_author_affiliation: Author affiliation or institution.
+        benchmark_author_orcid: Author ORCID identifier.
+        benchmark_author_github: Author GitHub username.
+        column_image: Column name for image file paths in the dataset.
+        column_image_id: Column name for unique image identifiers.
+        column_image_url: Column name for image URLs.
+        column_mime_type: Column name for image MIME types.
+        column_license: Column name for image licenses.
+        column_doi: Column name for Digital Object Identifiers (DOIs) of the image(s).
+        column_query: Column name for query text.
+        column_query_id: Column name for unique query identifiers.
+        column_relevance: Column name for relevance labels (boolean: 0 or 1).
+        column_tags: Column name for image tags (list of strings).
+        column_summary: Column name for image summaries.
+        column_confidence: Column name for confidence scores for taxonomy columns and boolean columns.
+        columns_taxonomy: Dictionary of enum values mapping taxonomy column names to their allowed values.
+        columns_boolean: List of boolean column names in the dataset.
+        image_base_url: Base URL for constructing image URLs from relative paths.
+        image_root_dir: Input directory containing image files for preprocessing.
+        meta_json: Path to metadata JSON file for preprocessing.
+        images_jsonl: Path to input images JSONL file.
+        seeds_jsonl: Path to input seeds JSONL file.
+        annotations_jsonl: Path to output annotations JSONL file (vision step output).
+        query_plan_jsonl: Path to output query plan JSONL file.
+        qrels_jsonl: Path to output qrels JSONL file (judge step output).
+        qrels_with_score_jsonl: Path to output qrels with similarity scores JSONL file.
+        summary_output_dir: Output directory for dataset summary visualizations.
+        hf_dataset_dir: Output directory for Hugging Face dataset format.
+        _hf_token: Hugging Face API token (sensitive, excluded from exports).
+        _hf_repo_id: Hugging Face repository ID for dataset upload.
+        _hf_private: Whether the Hugging Face repository should be private.
+        controlled_tag_vocab: Controlled vocabulary list for tagging by the vision adapter.
+        vision_config: Vision adapter configuration.
+        judge_config: Judge adapter configuration.
+        similarity_config: Similarity scoring adapter configuration.
+        query_plan_num_seeds: Number of seed images to use in query planning.
+        query_plan_seed_image_ids_column: Column name for seed image IDs in query plan.
+        query_plan_candidate_image_ids_column: Column name for candidate image IDs in query plan.
+        query_plan_core_facets: List of core facet names for query planning.
+        query_plan_off_facets: List of off-facet names for query planning.
+        query_plan_diversity_facets: List of diversity facet names for query planning.
+        query_plan_neg_total: Total number of negative examples per query.
+        query_plan_neg_hard: Number of hard negative examples per query.
+        query_plan_neg_nearmiss: Number of near-miss negative examples per query.
+        query_plan_neg_easy: Number of easy negative examples per query.
+        query_plan_random_seed: Random seed for reproducible query planning.
     """
 
-    # dataset configuration
+    # Benchmark metadata
     benchmark_name: str = "Default benchmark"
     benchmark_description: str = "A default benchmark configuration"
     benchmark_author: Optional[str] = None
@@ -92,6 +189,8 @@ class BenchmarkConfig:
     benchmark_author_affiliation: Optional[str] = None
     benchmark_author_orcid: Optional[str] = None
     benchmark_author_github: Optional[str] = None
+    
+    # Dataset column names
     column_image: str = "image"
     column_image_id: str = "image_id"
     column_image_url: str = "image_url"
@@ -109,23 +208,23 @@ class BenchmarkConfig:
     image_base_url: Optional[str] = None 
 
     # File paths
-    image_root_dir: Optional[str] = None  # Input directory for preprocessing
-    meta_json: Optional[str] = None  # Metadata JSON file for preprocessing
-    images_jsonl: Optional[str] = None  # Input images JSONL file
-    seeds_jsonl: Optional[str] = None  # Input seeds JSONL file
-    annotations_jsonl: Optional[str] = None  # Output annotations JSONL file
-    query_plan_jsonl: Optional[str] = None  # Output query plan JSONL file
-    qrels_jsonl: Optional[str] = None  # Output qrels JSONL file
-    qrels_with_score_jsonl: Optional[str] = None  # Output qrels with similarity score JSONL file
-    summary_output_dir: Optional[str] = None  # Output directory for dataset summary
-    hf_dataset_dir: Optional[str] = None  # Output directory for Hugging Face dataset
+    image_root_dir: Optional[str] = None
+    meta_json: Optional[str] = None
+    images_jsonl: Optional[str] = None
+    seeds_jsonl: Optional[str] = None
+    annotations_jsonl: Optional[str] = None
+    query_plan_jsonl: Optional[str] = None
+    qrels_jsonl: Optional[str] = None
+    qrels_with_score_jsonl: Optional[str] = None
+    summary_output_dir: Optional[str] = None
+    hf_dataset_dir: Optional[str] = None
 
     # Hugging Face configuration (sensitive fields use _ prefix)
     _hf_token: Optional[str] = field(default_factory=lambda: os.getenv("HF_TOKEN"))
     _hf_repo_id: Optional[str] = None
     _hf_private: Optional[bool] = None
 
-    # controlled tag vocabulary
+    # Controlled tag vocabulary
     controlled_tag_vocab: List[str] = field(default_factory=list)
 
     # Adapter configurations
@@ -147,10 +246,21 @@ class BenchmarkConfig:
     query_plan_random_seed: Optional[int] = None
 
     def required_qrels_columns(self) -> List[str]:
+        """
+        Get the list of required column names for qrels output.
+        
+        Returns:
+            List of required column names: query, query_id, relevance, and image_id.
+        """
         return [self.column_query, self.column_query_id, self.column_relevance, self.column_image_id]
     
     def get_columns(self) -> List[str]:
-        """Get all columns."""
+        """
+        Get all column configuration field names.
+        
+        Returns:
+            List of field names that start with 'column_' or 'columns_' (excluding private fields).
+        """
         return [field for field in dir(self) if (field.startswith('column_') or field.startswith('columns_')) and not field.startswith('_')]
 
     def to_csv(self) -> str:

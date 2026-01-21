@@ -418,7 +418,7 @@ def run_all(
         )
         logger.info("✓ Preprocessing complete")
     else:
-        logger.info("Skipping preprocess step")
+        logger.info("[PIPELINE]Skipping preprocess step")
     
     # Step 2: Vision
     if not skip_vision:
@@ -433,7 +433,7 @@ def run_all(
         )
         logger.info("✓ Vision annotation complete")
     else:
-        logger.info("Skipping vision step")
+        logger.info("[PIPELINE] Skipping vision step")
     
     # Step 3: Query Plan
     if not skip_query_plan:
@@ -445,7 +445,7 @@ def run_all(
         )
         logger.info("✓ Query plan complete")
     else:
-        logger.info("Skipping query plan step")
+        logger.info("[PIPELINE] Skipping query plan step")
     
     # Step 4: Judge
     if not skip_judge:
@@ -460,7 +460,7 @@ def run_all(
         )
         logger.info("✓ Judge relevance complete")
     else:
-        logger.info("Skipping judge step")
+        logger.info("[PIPELINE] Skipping judge step")
     
     logger.info("\n" + "=" * 80)
     logger.info("Pipeline complete!")
@@ -478,7 +478,25 @@ def run_vision_make(
     vision_adapter: Optional[Vision] = None,
     adapter_name: Optional[str] = None,
 ) -> Path:
-    """Create vision batch input JSONL file."""
+    """
+    Create vision batch input JSONL file from images.
+    
+    Reads images from images.jsonl, converts them to VisionImage objects with metadata,
+    and writes batch input lines using the vision adapter's build_batch_lines method.
+    
+    Args:
+        images_jsonl: Input images JSONL path. If None, uses config.images_jsonl.
+        out_batch_jsonl: Output batch input JSONL path. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        
+    Returns:
+        Path to the created batch input JSONL file.
+        
+    Raises:
+        ValueError: If images_jsonl is not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     images_jsonl = Path(images_jsonl) if images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
     if images_jsonl is None:
@@ -510,7 +528,7 @@ def run_vision_make(
     write_jsonl(out_batch_jsonl, batch_lines)
     
     file_size_mb = out_batch_jsonl.stat().st_size / (1024 * 1024)
-    logger.info(f"Created vision batch input: {out_batch_jsonl} ({file_size_mb:.2f} MB, {len(batch_lines)} requests)")
+    logger.info(f"[VISION] Created vision batch input: {out_batch_jsonl} ({file_size_mb:.2f} MB, {len(batch_lines)} requests)")
     
     return out_batch_jsonl
 
@@ -522,7 +540,25 @@ def run_vision_submit(
     vision_adapter: Optional[Vision] = None,
     adapter_name: Optional[str] = None,
 ) -> str:
-    """Submit vision batch and save batch ID(s) to file."""
+    """
+    Submit vision batch to the vision adapter and save batch ID(s) to file.
+    
+    Reads batch input JSONL, submits it using the vision adapter, and saves
+    the batch ID(s) to a file for later retrieval.
+    
+    Args:
+        batch_input_jsonl: Path to batch input JSONL file. If None, auto-generated from config.
+        batch_id_file: Path to save batch ID(s). If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        
+    Returns:
+        Comma-separated string of batch ID(s).
+        
+    Raises:
+        ValueError: If batch_input_jsonl is not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_input_jsonl is None:
@@ -566,7 +602,7 @@ def run_vision_submit(
         batch_id_file = batch_input_jsonl.parent / ".vision_batch_id"
     save_batch_id(batch_id_str, batch_id_file)
     
-    logger.info(f"Submitted vision batch: {batch_id_str}")
+    logger.info(f"[VISION] Submitted vision batch: {batch_id_str}")
     return batch_id_str
 
 
@@ -578,7 +614,24 @@ def run_vision_wait(
     vision_adapter: Optional[Vision] = None,
     adapter_name: Optional[str] = None,
 ) -> None:
-    """Wait for vision batch(es) to complete."""
+    """
+    Wait for vision batch(es) to complete.
+    
+    Loads batch ID(s) from file or uses provided batch_id, then waits for
+    all batches to complete using the vision adapter's wait_for_batch method.
+    
+    Args:
+        batch_id: Comma-separated batch ID(s). If None, loaded from batch_id_file.
+        batch_id_file: Path to batch ID file. If None, auto-generated from config.
+        poll_s: Polling interval in seconds (used by adapter if supported).
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        
+    Raises:
+        ValueError: If batch_id and batch_id_file are both None.
+        FileNotFoundError: If batch_id_file is specified but doesn't exist.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_id is None:
@@ -605,7 +658,7 @@ def run_vision_wait(
     # Wait for batches using adapter method
     vision_adapter.wait_for_batch(batch_ref)
     
-    logger.info(f"All vision batches completed: {', '.join(batch_ids)}")
+    logger.info(f"[VISION] All vision batches completed: {', '.join(batch_ids)}")
 
 
 def run_vision_download(
@@ -617,7 +670,25 @@ def run_vision_download(
     vision_adapter: Optional[Vision] = None,
     adapter_name: Optional[str] = None,
 ) -> None:
-    """Download vision batch results."""
+    """
+    Download vision batch results from the provider.
+    
+    Loads batch ID(s) from file or uses provided batch_id, then downloads
+    batch results and errors using the vision adapter's download_batch_results method.
+    
+    Args:
+        batch_id: Comma-separated batch ID(s). If None, loaded from batch_id_file.
+        batch_id_file: Path to batch ID file. If None, auto-generated from config.
+        batch_output_jsonl: Path to save batch output. If None, auto-generated.
+        batch_error_jsonl: Path to save batch errors. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        
+    Raises:
+        ValueError: If batch_id and batch_id_file are both None.
+        FileNotFoundError: If batch_id_file is specified but doesn't exist.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_id is None:
@@ -653,7 +724,7 @@ def run_vision_download(
         error_path=batch_error_jsonl,
     )
     
-    logger.info(f"Downloaded vision batch results to {batch_output_jsonl}")
+    logger.info(f"[VISION] Downloaded vision batch results to {batch_output_jsonl}")
 
 
 def run_vision_parse(
@@ -664,7 +735,27 @@ def run_vision_parse(
     vision_adapter: Optional[Vision] = None,
     adapter_name: Optional[str] = None,
 ) -> List[VisionAnnotation]:
-    """Parse vision batch output to annotations JSONL."""
+    """
+    Parse vision batch output into annotations JSONL format.
+    
+    Reads batch output JSONL, parses each response using the vision adapter's
+    parse_response method, and writes the results to annotations JSONL. Failed
+    requests are logged and written to a separate failed JSONL file.
+    
+    Args:
+        batch_output_jsonl: Path to batch output JSONL. If None, auto-generated from config.
+        images_jsonl: Path to input images JSONL. If None, uses config.images_jsonl.
+        out_annotations_jsonl: Path to output annotations JSONL. If None, uses config.annotations_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        
+    Returns:
+        List of VisionAnnotation objects successfully parsed.
+        
+    Raises:
+        ValueError: If required paths are not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_output_jsonl is None:
@@ -711,7 +802,7 @@ def run_vision_parse(
             image_id = custom_id.split(f"{config.vision_config.stage}::", 1)[1]
             error = row.get("error")
             if error:
-                logger.warning(f"Vision request failed for {image_id}: {error}")
+                logger.warning(f"[VISION] Vision request failed for {image_id}: {error}")
                 failed_rows.append({
                     "image_id": image_id,
                     "custom_id": custom_id,
@@ -726,7 +817,7 @@ def run_vision_parse(
                     ann = vision_adapter.parse_response(body, image)
                     annotations.append(ann)
                 except Exception as e:
-                    logger.error(f"Failed to parse vision result for {image_id}: {e}")
+                    logger.error(f"[VISION] Failed to parse vision result for {image_id}: {e}")
                     failed_rows.append({
                         "image_id": image_id,
                         "custom_id": custom_id,
@@ -737,7 +828,7 @@ def run_vision_parse(
     if failed_rows:
         failed_path = Path(out_annotations_jsonl).parent / f"{Path(out_annotations_jsonl).stem}_failed.jsonl"
         write_jsonl(failed_path, failed_rows)
-        logger.warning(f"Wrote {len(failed_rows)} failed vision requests to {failed_path}")
+        logger.warning(f"[VISION] Wrote {len(failed_rows)} failed vision requests to {failed_path}")
     
     # Write annotations JSONL
     rows_out = []
@@ -755,7 +846,7 @@ def run_vision_parse(
         rows_out.append(row)
     
     write_jsonl(out_annotations_jsonl, rows_out)
-    logger.info(f"Parsed {len(annotations)} successful vision annotations, {len(failed_rows)} failed")
+    logger.info(f"[VISION] Parsed {len(annotations)} successful vision annotations, {len(failed_rows)} failed")
     return annotations
 
 
@@ -768,7 +859,26 @@ def run_judge_make(
     judge_adapter: Optional[Judge] = None,
     adapter_name: Optional[str] = None,
 ) -> Path:
-    """Create judge batch input JSONL file."""
+    """
+    Create judge batch input JSONL file from query plan and annotations.
+    
+    Loads query plan and annotations, converts them to JudgeQuery objects with
+    metadata, and writes batch input lines using the judge adapter's build_batch_lines method.
+    
+    Args:
+        query_plan_jsonl: Input query plan JSONL path. If None, uses config.query_plan_jsonl.
+        annotations_jsonl: Input annotations JSONL path. If None, uses config.annotations_jsonl.
+        out_batch_jsonl: Output batch input JSONL path. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        
+    Returns:
+        Path to the created batch input JSONL file.
+        
+    Raises:
+        ValueError: If query_plan_jsonl or annotations_jsonl are not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if query_plan_jsonl is None:
@@ -826,7 +936,7 @@ def run_judge_make(
     write_jsonl(out_batch_jsonl, batch_lines)
     
     file_size_mb = out_batch_jsonl.stat().st_size / (1024 * 1024)
-    logger.info(f"Created judge batch input: {out_batch_jsonl} ({file_size_mb:.2f} MB, {len(batch_lines)} requests)")
+    logger.info(f"[JUDGE] Created judge batch input: {out_batch_jsonl} ({file_size_mb:.2f} MB, {len(batch_lines)} requests)")
     
     return out_batch_jsonl
 
@@ -838,7 +948,25 @@ def run_judge_submit(
     judge_adapter: Optional[Judge] = None,
     adapter_name: Optional[str] = None,
 ) -> str:
-    """Submit judge batch and save batch ID(s) to file."""
+    """
+    Submit judge batch to the judge adapter and save batch ID(s) to file.
+    
+    Reads batch input JSONL, submits it using the judge adapter, and saves
+    the batch ID(s) to a file for later retrieval.
+    
+    Args:
+        batch_input_jsonl: Path to batch input JSONL file. If None, auto-generated from config.
+        batch_id_file: Path to save batch ID(s). If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        
+    Returns:
+        Comma-separated string of batch ID(s).
+        
+    Raises:
+        ValueError: If batch_input_jsonl is not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_input_jsonl is None:
@@ -899,7 +1027,7 @@ def run_judge_submit(
         batch_id_file = batch_input_jsonl.parent / ".judge_batch_id"
     save_batch_id(batch_id_str, batch_id_file)
     
-    logger.info(f"Submitted judge batch: {batch_id_str}")
+    logger.info(f"[JUDGE] Submitted judge batch: {batch_id_str}")
     return batch_id_str
 
 
@@ -911,7 +1039,24 @@ def run_judge_wait(
     judge_adapter: Optional[Judge] = None,
     adapter_name: Optional[str] = None,
 ) -> None:
-    """Wait for judge batch(es) to complete."""
+    """
+    Wait for judge batch(es) to complete.
+    
+    Loads batch ID(s) from file or uses provided batch_id, then waits for
+    all batches to complete using the judge adapter's wait_for_batch method.
+    
+    Args:
+        batch_id: Comma-separated batch ID(s). If None, loaded from batch_id_file.
+        batch_id_file: Path to batch ID file. If None, auto-generated from config.
+        poll_s: Polling interval in seconds (used by adapter if supported).
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        
+    Raises:
+        ValueError: If batch_id and batch_id_file are both None.
+        FileNotFoundError: If batch_id_file is specified but doesn't exist.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_id is None:
@@ -938,7 +1083,7 @@ def run_judge_wait(
     # Wait for batches using adapter method
     judge_adapter.wait_for_batch(batch_ref)
     
-    logger.info(f"All judge batches completed: {', '.join(batch_ids)}")
+    logger.info(f"[JUDGE] All judge batches completed: {', '.join(batch_ids)}")
 
 
 def run_judge_download(
@@ -950,7 +1095,25 @@ def run_judge_download(
     judge_adapter: Optional[Judge] = None,
     adapter_name: Optional[str] = None,
 ) -> None:
-    """Download judge batch results."""
+    """
+    Download judge batch results from the provider.
+    
+    Loads batch ID(s) from file or uses provided batch_id, then downloads
+    batch results and errors using the judge adapter's download_batch_results method.
+    
+    Args:
+        batch_id: Comma-separated batch ID(s). If None, loaded from batch_id_file.
+        batch_id_file: Path to batch ID file. If None, auto-generated from config.
+        batch_output_jsonl: Path to save batch output. If None, auto-generated.
+        batch_error_jsonl: Path to save batch errors. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        
+    Raises:
+        ValueError: If batch_id and batch_id_file are both None.
+        FileNotFoundError: If batch_id_file is specified but doesn't exist.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_id is None:
@@ -986,7 +1149,7 @@ def run_judge_download(
         error_path=batch_error_jsonl,
     )
     
-    logger.info(f"Downloaded judge batch results to {batch_output_jsonl}")
+    logger.info(f"[JUDGE] Downloaded judge batch results to {batch_output_jsonl}")
 
 
 def run_judge_parse(
@@ -998,7 +1161,29 @@ def run_judge_parse(
     judge_adapter: Optional[Judge] = None,
     adapter_name: Optional[str] = None,
 ) -> List[JudgeResult]:
-    """Parse judge batch output to qrels JSONL."""
+    """
+    Parse judge batch output into qrels JSONL format.
+    
+    Reads batch output JSONL, parses each response using the judge adapter's
+    parse_response method, and writes the results to qrels JSONL. Failed
+    requests are logged and written to a separate failed JSONL file. Metadata
+    from annotations is automatically added to the qrels output.
+    
+    Args:
+        batch_output_jsonl: Path to batch output JSONL. If None, auto-generated from config.
+        query_plan_jsonl: Path to input query plan JSONL. If None, uses config.query_plan_jsonl.
+        annotations_jsonl: Path to input annotations JSONL. If None, uses config.annotations_jsonl.
+        out_qrels_jsonl: Path to output qrels JSONL. If None, uses config.qrels_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        
+    Returns:
+        List of JudgeResult objects successfully parsed.
+        
+    Raises:
+        ValueError: If required paths are not provided and not in config.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if batch_output_jsonl is None:
@@ -1064,7 +1249,7 @@ def run_judge_parse(
             query_id = custom_id.split(f"{config.judge_config.stage}::", 1)[1]
             error = row.get("error")
             if error:
-                logger.warning(f"Judge request failed for {query_id}: {error}")
+                logger.warning(f"[JUDGE] Judge request failed for {query_id}: {error}")
                 failed_rows.append({
                     "query_id": query_id,
                     "custom_id": custom_id,
@@ -1079,7 +1264,7 @@ def run_judge_parse(
                     result = judge_adapter.parse_response(body, query)
                     results.append(result)
                 except Exception as e:
-                    logger.error(f"Failed to parse judge result for {query_id}: {e}")
+                    logger.error(f"[JUDGE] Failed to parse judge result for {query_id}: {e}")
                     failed_rows.append({
                         "query_id": query_id,
                         "custom_id": custom_id,
@@ -1090,7 +1275,7 @@ def run_judge_parse(
     if failed_rows:
         failed_path = Path(out_qrels_jsonl).parent / f"{Path(out_qrels_jsonl).stem}_failed.jsonl"
         write_jsonl(failed_path, failed_rows)
-        logger.warning(f"Wrote {len(failed_rows)} failed judge requests to {failed_path}")
+        logger.warning(f"[JUDGE] Wrote {len(failed_rows)} failed judge requests to {failed_path}")
     
     # Write qrels JSONL (reuse logic from run_judge)
     rows_out = []
@@ -1123,7 +1308,7 @@ def run_judge_parse(
             rows_out.append(row)
     
     write_jsonl(out_qrels_jsonl, rows_out)
-    logger.info(f"Parsed {len(results)} successful judge results, {len(failed_rows)} failed")
+    logger.info(f"[JUDGE] Parsed {len(results)} successful judge results, {len(failed_rows)} failed")
     return results
 
 
@@ -1141,7 +1326,30 @@ def run_vision_retry(
     adapter_name: Optional[str] = None,
     submit: bool = False,
 ) -> Path:
-    """Create retry batch for failed vision requests."""
+    """
+    Create retry batch for failed vision requests.
+    
+    Extracts failed image IDs from the error JSONL file, loads the corresponding
+    images from images.jsonl, and creates a new batch input file for resubmission.
+    Optionally submits the retry batch automatically.
+    
+    Args:
+        error_jsonl: Path to error JSONL file. If None, auto-generated from config.
+        images_jsonl: Path to input images JSONL. If None, uses config.images_jsonl.
+        out_batch_jsonl: Path to output retry batch JSONL. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        vision_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.vision_config.adapter.
+        submit: If True, automatically submit the retry batch after creating it.
+        
+    Returns:
+        Path to the created retry batch JSONL file.
+        
+    Raises:
+        ValueError: If error_jsonl or images_jsonl are not provided and not in config.
+        FileNotFoundError: If error_jsonl does not exist.
+        RuntimeError: If retry batch file size exceeds 200MB limit.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if error_jsonl is None:
@@ -1162,14 +1370,14 @@ def run_vision_retry(
     # Extract failed image IDs
     failed_ids = extract_failed_ids(error_jsonl, config.vision_config.stage)
     if not failed_ids:
-        logger.warning(f"No failed vision requests found in {error_jsonl}")
+        logger.warning(f"[VISION] No failed vision requests found in {error_jsonl}")
         if out_batch_jsonl is None:
             out_batch_jsonl = error_jsonl.parent / "vision_batch_input.jsonl.retry"
         write_jsonl(out_batch_jsonl, [])
-        logger.info(f"Created empty retry batch file: {out_batch_jsonl}")
+        logger.info(f"[VISION] Created empty retry batch file: {out_batch_jsonl}")
         return out_batch_jsonl
     
-    logger.info(f"Found {len(failed_ids)} failed image IDs to re-submit")
+    logger.info(f"[VISION] Found {len(failed_ids)} failed image IDs to re-submit")
     
     if adapter_name is None:
         adapter_name = config.vision_config.adapter
@@ -1193,7 +1401,7 @@ def run_vision_retry(
             ))
     
     if not images:
-        logger.warning(f"None of the failed image IDs were found in {images_jsonl}")
+        logger.warning(f"[VISION] None of the failed image IDs were found in {images_jsonl}")
         if out_batch_jsonl is None:
             out_batch_jsonl = error_jsonl.parent / "vision_batch_input.jsonl.retry"
         write_jsonl(out_batch_jsonl, [])
@@ -1214,9 +1422,9 @@ def run_vision_retry(
             f"Consider splitting into multiple batches."
         )
     elif file_size_mb > 150:
-        logger.warning(f"Retry batch file size ({file_size_mb:.2f} MB) is approaching 200MB limit")
+        logger.warning(f"[VISION] Retry batch file size ({file_size_mb:.2f} MB) is approaching 200MB limit")
     
-    logger.info(f"Created vision retry batch with {len(batch_lines)} requests: {out_batch_jsonl} ({file_size_mb:.2f} MB)")
+    logger.info(f"[VISION] Created vision retry batch with {len(batch_lines)} requests: {out_batch_jsonl} ({file_size_mb:.2f} MB)")
     
     if submit:
         batch_ref = vision_adapter.submit(
@@ -1227,7 +1435,7 @@ def run_vision_retry(
         batch_id_str = format_batch_id(batch_ref)
         batch_id_file = out_batch_jsonl.parent / ".vision_retry_batch_id"
         save_batch_id(batch_id_str, batch_id_file)
-        logger.info(f"Submitted vision retry batch: {batch_id_str}")
+        logger.info(f"[VISION] Submitted vision retry batch: {batch_id_str}")
     
     return out_batch_jsonl
 
@@ -1242,7 +1450,31 @@ def run_judge_retry(
     adapter_name: Optional[str] = None,
     submit: bool = False,
 ) -> Path:
-    """Create retry batch for failed judge requests."""
+    """
+    Create retry batch for failed judge requests.
+    
+    Extracts failed query IDs from the error JSONL file, loads the corresponding
+    queries from query_plan.jsonl and annotations.jsonl, and creates a new batch
+    input file for resubmission. Optionally submits the retry batch automatically.
+    
+    Args:
+        error_jsonl: Path to error JSONL file. If None, auto-generated from config.
+        query_plan_jsonl: Path to input query plan JSONL. If None, uses config.query_plan_jsonl.
+        annotations_jsonl: Path to input annotations JSONL. If None, uses config.annotations_jsonl.
+        out_batch_jsonl: Path to output retry batch JSONL. If None, auto-generated.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        judge_adapter: Optional pre-instantiated adapter. If None, created from adapter_name or config.
+        adapter_name: Adapter name to use. If None, uses config.judge_config.adapter.
+        submit: If True, automatically submit the retry batch after creating it.
+        
+    Returns:
+        Path to the created retry batch JSONL file.
+        
+    Raises:
+        ValueError: If required paths are not provided and not in config.
+        FileNotFoundError: If error_jsonl does not exist.
+        RuntimeError: If retry batch file size exceeds 200MB limit.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     if error_jsonl is None:
@@ -1267,11 +1499,11 @@ def run_judge_retry(
     # Extract failed query IDs
     failed_ids = extract_failed_ids(error_jsonl, config.judge_config.stage)
     if not failed_ids:
-        logger.warning(f"No failed judge requests found in {error_jsonl}")
+        logger.warning(f"[JUDGE] No failed judge requests found in {error_jsonl}")
         if out_batch_jsonl is None:
             out_batch_jsonl = error_jsonl.parent / "judge_batch_input.jsonl.retry"
         write_jsonl(out_batch_jsonl, [])
-        logger.info(f"Created empty retry batch file: {out_batch_jsonl}")
+        logger.info(f"[JUDGE] Created empty retry batch file: {out_batch_jsonl}")
         return out_batch_jsonl
     
     logger.info(f"Found {len(failed_ids)} failed query IDs to re-submit")
@@ -1334,9 +1566,9 @@ def run_judge_retry(
             f"Consider splitting into multiple batches."
         )
     elif file_size_mb > 150:
-        logger.warning(f"Retry batch file size ({file_size_mb:.2f} MB) is approaching 200MB limit")
+        logger.warning(f"[JUDGE] Retry batch file size ({file_size_mb:.2f} MB) is approaching 200MB limit")
     
-    logger.info(f"Created judge retry batch with {len(batch_lines)} requests: {out_batch_jsonl} ({file_size_mb:.2f} MB)")
+    logger.info(f"[JUDGE] Created judge retry batch with {len(batch_lines)} requests: {out_batch_jsonl} ({file_size_mb:.2f} MB)")
     
     if submit:
         batch_ref = judge_adapter.submit(
@@ -1347,7 +1579,7 @@ def run_judge_retry(
         batch_id_str = format_batch_id(batch_ref)
         batch_id_file = out_batch_jsonl.parent / ".judge_retry_batch_id"
         save_batch_id(batch_id_str, batch_id_file)
-        logger.info(f"Submitted judge retry batch: {batch_id_str}")
+        logger.info(f"[JUDGE] Submitted judge retry batch: {batch_id_str}")
     
     return out_batch_jsonl
 
@@ -1383,9 +1615,9 @@ def run_list_batches(
             # If client is stored in adapter, no need to get it separately
             vision_batches = vision_adapter.list_batches(active_only=active_only, limit=limit)
         else:
-            logger.warning("No vision adapter name provided")
+            logger.warning("[LIST] No vision adapter name provided")
     except Exception as e:
-        logger.warning(f"Failed to list vision batches: {e}")
+        logger.warning(f"[LIST] Failed to list vision batches: {e}")
     
     # List judge batches
     judge_batches = []
@@ -1396,9 +1628,9 @@ def run_list_batches(
             # If client is stored in adapter, no need to get it separately
             judge_batches = judge_adapter.list_batches(active_only=active_only, limit=limit)
         else:
-            logger.warning("No judge adapter name provided")
+            logger.warning("[LIST] No judge adapter name provided")
     except Exception as e:
-        logger.warning(f"Failed to list judge batches: {e}")
+        logger.warning(f"[LIST] Failed to list judge batches: {e}")
     
     # Print all batches
     print("\n========== VISION BATCHES ==========")
@@ -1993,7 +2225,7 @@ def main() -> None:
         )
         logger.info(f"✅ Judge retry batch created -> {out_path}")
         if getattr(args, "submit", False):
-            logger.info("✅ Judge retry batch submitted")
+            logger.info("[JUDGE] ✅ Judge retry batch submitted")
     
     # List Batches
     elif args.command == "list-batches":

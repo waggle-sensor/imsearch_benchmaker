@@ -1,7 +1,11 @@
 """
 batch.py
 
-OpenAI Batch API helpers (submit, poll).
+OpenAI Batch API helpers for submitting, polling, and managing batch jobs.
+
+This module provides utilities for working with OpenAI's Batch API, including
+batch submission, sharding large batches, waiting for completion with progress
+indicators, downloading results, and listing batches.
 """
 
 from __future__ import annotations
@@ -23,6 +27,22 @@ def shard_batch_jsonl(
     max_items_per_shard: int,
     shard_prefix: str,
 ) -> List[Path]:
+    """
+    Split a large JSONL file into smaller shards.
+    
+    Reads the input JSONL file and splits it into multiple shard files,
+    each containing at most max_items_per_shard items. Shard files are
+    named with the pattern {shard_prefix}_{shard_num:04d}.jsonl.
+    
+    Args:
+        input_jsonl: Path to the input JSONL file to shard.
+        output_dir: Directory to write shard files to.
+        max_items_per_shard: Maximum number of items per shard.
+        shard_prefix: Prefix for shard filenames.
+        
+    Returns:
+        List of paths to created shard files.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     shard_paths = []
     current_shard = []
@@ -51,6 +71,21 @@ def submit_batch(
     completion_window: Optional[str],
     metadata: Optional[Dict[str, str]] = None,
 ) -> BatchRefs:
+    """
+    Submit a single batch job to OpenAI Batch API.
+    
+    Uploads the input JSONL file, creates a batch job, and returns
+    references to the uploaded file and batch job.
+    
+    Args:
+        client: OpenAI client instance.
+        input_jsonl: Path to the batch input JSONL file.
+        completion_window: Completion window for the batch (e.g., "24h").
+        metadata: Optional metadata dictionary to attach to the batch.
+        
+    Returns:
+        BatchRefs object containing input_file_id and batch_id.
+    """
     up = client.files.create(file=input_jsonl.open("rb"), purpose="batch")
     input_file_id = up.id
 
@@ -70,6 +105,22 @@ def submit_batch_shards(
     metadata: Optional[Dict[str, str]] = None,
     max_concurrent: int = 1,
 ) -> List[BatchRefs]:
+    """
+    Submit multiple batch shards with concurrency control.
+    
+    Submits multiple batch shards while respecting the max_concurrent limit.
+    Monitors in-flight batches and waits for completion before submitting new ones.
+    
+    Args:
+        client: OpenAI client instance.
+        shard_paths: List of paths to shard JSONL files to submit.
+        completion_window: Completion window for batches (e.g., "24h").
+        metadata: Optional metadata dictionary to attach to batches.
+        max_concurrent: Maximum number of batches to submit concurrently.
+        
+    Returns:
+        List of BatchRefs objects for all submitted batches.
+    """
     all_refs: List[BatchRefs] = []
     in_flight: List[BatchRefs] = []
 

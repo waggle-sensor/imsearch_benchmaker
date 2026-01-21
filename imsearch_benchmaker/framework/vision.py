@@ -2,6 +2,10 @@
 vision.py
 
 Base framework for vision annotation adapters.
+
+This module provides the abstract base class `Vision` that all vision annotation
+adapters must implement, along with a registry system for dynamic adapter lookup
+and instantiation.
 """
 
 from __future__ import annotations
@@ -16,11 +20,27 @@ from .config import BenchmarkConfig, VisionConfig
 class Vision(ABC):
     """
     Abstract base class for vision annotation adapters.
+    
+    This class defines the interface that all vision annotation adapters must implement.
+    Adapters are responsible for converting images to provider-specific request formats,
+    submitting batches, waiting for completion, downloading results, and parsing responses.
+    
+    Attributes:
+        batch_endpoint: Endpoint path for batch API requests (default: "/v1/responses").
+        config: BenchmarkConfig instance containing adapter and benchmark settings.
+        client: Provider-specific client instance (e.g., OpenAI client).
     """
 
     batch_endpoint: str = "/v1/responses"
 
     def __init__(self, config: BenchmarkConfig, client: Any = None) -> None:
+        """
+        Initialize a vision adapter.
+        
+        Args:
+            config: BenchmarkConfig instance with vision adapter settings.
+            client: Optional provider-specific client instance.
+        """
         self.config = config
         self.client = client
 
@@ -28,18 +48,38 @@ class Vision(ABC):
     def build_request(self, image: VisionImage) -> Dict[str, object]:
         """
         Build a provider-specific request body for a single image.
+        
+        Args:
+            image: VisionImage object containing image_id, image_url, and metadata.
+            
+        Returns:
+            Dictionary representing the provider-specific request body.
         """
 
     @abstractmethod
     def parse_response(self, response_body: Dict[str, object], image: VisionImage) -> VisionAnnotation:
         """
         Parse a provider response body into a VisionAnnotation.
+        
+        Args:
+            response_body: Dictionary containing the provider's response.
+            image: Original VisionImage that was submitted.
+            
+        Returns:
+            VisionAnnotation object with parsed results.
         """
 
     @abstractmethod
     def submit(self, images: Iterable[VisionImage], **kwargs: Any) -> object:
         """
         Submit images to the provider and return a provider-specific reference.
+        
+        Args:
+            images: Iterable of VisionImage objects to submit.
+            **kwargs: Additional adapter-specific arguments.
+            
+        Returns:
+            Provider-specific batch reference (e.g., BatchRefs for OpenAI).
         """
 
     def get_client(self, config: Any = None) -> Any:
@@ -69,6 +109,15 @@ class Vision(ABC):
     def build_batch_lines(self, images: Iterable[VisionImage]) -> Iterable[Dict[str, object]]:
         """
         Build JSONL lines for batch execution.
+        
+        Converts VisionImage objects into batch API request format with custom_id,
+        method, url, and body fields.
+        
+        Args:
+            images: Iterable of VisionImage objects to convert.
+            
+        Yields:
+            Dictionary representing a single batch request line.
         """
         for image in images:
             yield {
@@ -80,7 +129,10 @@ class Vision(ABC):
 
     def get_name(self) -> str:
         """
-        Identifier for this adapter implementation.
+        Get the identifier for this adapter implementation.
+        
+        Returns:
+            Class name of the adapter (e.g., "OpenAIVision").
         """
         return self.__class__.__name__
 
@@ -100,6 +152,10 @@ class Vision(ABC):
 class VisionAdapterRegistry:
     """
     Registry for vision adapters and their config classes.
+    
+    This registry allows adapters to be registered by name and dynamically
+    instantiated. It also maintains a mapping between adapter names and their
+    corresponding config classes for automatic config class selection.
     """
 
     _adapters: Dict[str, Type[Vision]] = {}
@@ -107,6 +163,17 @@ class VisionAdapterRegistry:
 
     @classmethod
     def register(cls, name: str, adapter_class: Type[Vision], config_class: Type[VisionConfig]) -> None:
+        """
+        Register a vision adapter and its config class.
+        
+        Args:
+            name: Adapter name (e.g., "openai").
+            adapter_class: Vision adapter class to register.
+            config_class: Corresponding VisionConfig subclass.
+            
+        Raises:
+            ValueError: If adapter_class is not a Vision subclass or config_class is not a VisionConfig subclass.
+        """
         if not issubclass(adapter_class, Vision):
             raise ValueError(f"[{cls.__name__}] Adapter class must be a subclass of Vision")
         cls._adapters[name] = adapter_class
@@ -116,6 +183,19 @@ class VisionAdapterRegistry:
 
     @classmethod
     def get(cls, name: str, **kwargs) -> Vision:
+        """
+        Get an instance of a registered vision adapter.
+        
+        Args:
+            name: Adapter name to instantiate.
+            **kwargs: Arguments to pass to the adapter constructor (typically config and client).
+            
+        Returns:
+            Instance of the requested vision adapter.
+            
+        Raises:
+            ValueError: If the adapter name is not registered.
+        """
         if name not in cls._adapters:
             raise ValueError(f"[{cls.__name__}] Adapter '{name}' not found. Available adapters: {list(cls._adapters.keys())}")
         return cls._adapters[name](**kwargs)
@@ -135,5 +215,11 @@ class VisionAdapterRegistry:
 
     @classmethod
     def list_adapters(cls) -> List[str]:
+        """
+        List all registered adapter names.
+        
+        Returns:
+            List of registered adapter names.
+        """
         return list(cls._adapters.keys())
 

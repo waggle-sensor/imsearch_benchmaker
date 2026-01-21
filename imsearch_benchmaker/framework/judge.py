@@ -2,6 +2,10 @@
 judge.py
 
 Base framework for judge adapters.
+
+This module provides the abstract base class `Judge` that all relevance judgment
+adapters must implement, along with a registry system for dynamic adapter lookup
+and instantiation.
 """
 
 from __future__ import annotations
@@ -17,11 +21,27 @@ from .config import BenchmarkConfig, JudgeConfig
 class Judge(ABC):
     """
     Abstract base class for query+relevance judge adapters.
+    
+    This class defines the interface that all relevance judgment adapters must implement.
+    Adapters are responsible for converting queries to provider-specific request formats,
+    submitting batches, waiting for completion, downloading results, and parsing responses.
+    
+    Attributes:
+        batch_endpoint: Endpoint path for batch API requests (default: "/v1/responses").
+        config: BenchmarkConfig instance containing adapter and benchmark settings.
+        client: Provider-specific client instance (e.g., OpenAI client).
     """
 
     batch_endpoint: str = "/v1/responses"
 
     def __init__(self, config: BenchmarkConfig, client: Any = None) -> None:
+        """
+        Initialize a judge adapter.
+        
+        Args:
+            config: BenchmarkConfig instance with judge adapter settings.
+            client: Optional provider-specific client instance.
+        """
         self.config = config
         self.client = client
 
@@ -29,18 +49,38 @@ class Judge(ABC):
     def build_request(self, query: JudgeQuery) -> Dict[str, object]:
         """
         Build a provider-specific request body for a query.
+        
+        Args:
+            query: JudgeQuery object containing query_id, query_text, candidate images, and metadata.
+            
+        Returns:
+            Dictionary representing the provider-specific request body.
         """
 
     @abstractmethod
     def parse_response(self, response_body: Dict[str, object], query: JudgeQuery) -> JudgeResult:
         """
         Parse a provider response body into a JudgeResult.
+        
+        Args:
+            response_body: Dictionary containing the provider's response.
+            query: Original JudgeQuery that was submitted.
+            
+        Returns:
+            JudgeResult object with parsed relevance scores.
         """
 
     @abstractmethod
     def submit(self, queries: Iterable[JudgeQuery], **kwargs: Any) -> object:
         """
         Submit queries to the provider and return a provider-specific reference.
+        
+        Args:
+            queries: Iterable of JudgeQuery objects to submit.
+            **kwargs: Additional adapter-specific arguments.
+            
+        Returns:
+            Provider-specific batch reference (e.g., BatchRefs for OpenAI).
         """
 
     def get_client(self, config: Any = None) -> Any:
@@ -70,6 +110,15 @@ class Judge(ABC):
     def build_batch_lines(self, queries: Iterable[JudgeQuery]) -> Iterable[Dict[str, object]]:
         """
         Build JSONL lines for batch execution.
+        
+        Converts JudgeQuery objects into batch API request format with custom_id,
+        method, url, and body fields.
+        
+        Args:
+            queries: Iterable of JudgeQuery objects to convert.
+            
+        Yields:
+            Dictionary representing a single batch request line.
         """
         for query in queries:
             yield {
@@ -80,6 +129,12 @@ class Judge(ABC):
             }
 
     def get_name(self) -> str:
+        """
+        Get the identifier for this adapter implementation.
+        
+        Returns:
+            Class name of the adapter (e.g., "OpenAIJudge").
+        """
         return self.__class__.__name__
 
     def list_batches(self, active_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
@@ -98,6 +153,10 @@ class Judge(ABC):
 class JudgeAdapterRegistry:
     """
     Registry for judge adapters and their config classes.
+    
+    This registry allows adapters to be registered by name and dynamically
+    instantiated. It also maintains a mapping between adapter names and their
+    corresponding config classes for automatic config class selection.
     """
 
     _adapters: Dict[str, Type[Judge]] = {}
@@ -105,6 +164,17 @@ class JudgeAdapterRegistry:
 
     @classmethod
     def register(cls, name: str, adapter_class: Type[Judge], config_class: Type[JudgeConfig]) -> None:
+        """
+        Register a judge adapter and its config class.
+        
+        Args:
+            name: Adapter name (e.g., "openai").
+            adapter_class: Judge adapter class to register.
+            config_class: Corresponding JudgeConfig subclass.
+            
+        Raises:
+            ValueError: If adapter_class is not a Judge subclass or config_class is not a JudgeConfig subclass.
+        """
         if not issubclass(adapter_class, Judge):
             raise ValueError("Adapter class must be a subclass of Judge")
         cls._adapters[name] = adapter_class
@@ -114,6 +184,19 @@ class JudgeAdapterRegistry:
 
     @classmethod
     def get(cls, name: str, **kwargs) -> Judge:
+        """
+        Get an instance of a registered judge adapter.
+        
+        Args:
+            name: Adapter name to instantiate.
+            **kwargs: Arguments to pass to the adapter constructor (typically config and client).
+            
+        Returns:
+            Instance of the requested judge adapter.
+            
+        Raises:
+            ValueError: If the adapter name is not registered.
+        """
         if name not in cls._adapters:
             raise ValueError(f"Adapter '{name}' not found. Available adapters: {list(cls._adapters.keys())}")
         return cls._adapters[name](**kwargs)
@@ -133,5 +216,11 @@ class JudgeAdapterRegistry:
 
     @classmethod
     def list_adapters(cls) -> List[str]:
+        """
+        List all registered adapter names.
+        
+        Returns:
+            List of registered adapter names.
+        """
         return list(cls._adapters.keys())
 

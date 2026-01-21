@@ -2,6 +2,9 @@
 io.py
 
 Shared JSONL helpers and batch utilities for benchmark pipelines.
+
+This module provides utilities for reading/writing JSONL files, managing batch references,
+and handling batch ID persistence for resumable pipeline execution.
 """
 
 from __future__ import annotations
@@ -19,7 +22,14 @@ logger = logging.getLogger(__name__)
 class BatchRefs:
     """
     Reference to a batch job, containing input file ID and batch ID.
-    Used for tracking batch submissions across different adapters.
+    
+    Used for tracking batch submissions across different adapters. This allows
+    the framework to work with adapter-specific batch reference formats while
+    maintaining a common interface.
+    
+    Attributes:
+        input_file_id: Identifier for the input file uploaded to the batch service.
+        batch_id: Identifier for the batch job submitted to the service.
     """
     input_file_id: str
     batch_id: str
@@ -28,6 +38,16 @@ class BatchRefs:
 def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
     """
     Read a JSONL file and yield each line as a dictionary.
+    
+    Args:
+        path: Path to the JSONL file to read.
+        
+    Yields:
+        Dictionary parsed from each non-empty line in the JSONL file.
+        
+    Raises:
+        RuntimeError: If a line contains invalid JSON.
+        FileNotFoundError: If the file does not exist.
     """
     with path.open("r", encoding="utf-8") as f:
         for i, line in enumerate(f, start=1):
@@ -43,6 +63,13 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
 def write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
     """
     Write dictionaries to a JSONL file.
+    
+    Creates the parent directory if it doesn't exist. Each dictionary is written
+    as a single JSON-encoded line with UTF-8 encoding.
+    
+    Args:
+        path: Path to the JSONL file to write.
+        rows: Iterable of dictionaries to write, one per line.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -80,7 +107,7 @@ def save_batch_id(batch_id: str, batch_id_file: Path) -> None:
     """
     batch_id_file.parent.mkdir(parents=True, exist_ok=True)
     batch_id_file.write_text(batch_id)
-    logger.info(f"Saved batch ID(s) to {batch_id_file}: {batch_id}")
+    logger.info(f"[IO] Saved batch ID(s) to {batch_id_file}: {batch_id}")
 
 
 def load_batch_id(batch_id_file: Path) -> str:
