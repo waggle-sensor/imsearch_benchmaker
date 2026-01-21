@@ -327,7 +327,3 @@ class OpenAIJudge(Judge):
 
     def get_name(self) -> str:
         return "openai_judge"
-
-
-JudgeAdapterRegistry.register("openai", OpenAIJudge, config_class=OpenAIJudgeConfig)
-

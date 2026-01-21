@@ -177,8 +177,3 @@ class CLIP(Similarity):
     def get_name(self) -> str:
         """Get the name of this adapter."""
         return f"local_clip_{self.model_name.replace('/', '_')}_{self.device.type}"
-
-
-# Register the adapter
-SimilarityAdapterRegistry.register("local_clip", CLIP, config_class=CLIPConfig)
-

@@ -372,7 +372,3 @@ class OpenAIVision(Vision):
 
     def get_name(self) -> str:
         return "openai_vision"
-
-
-VisionAdapterRegistry.register("openai", OpenAIVision, config_class=OpenAIVisionConfig)
-

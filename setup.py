@@ -8,6 +8,8 @@ optional adapters for different services (OpenAI, local CLIP, etc.).
 from pathlib import Path
 from setuptools import setup, find_packages
 
+VERSION = "0.0.2"
+
 def parse_requirements(requirements_path: Path) -> list[str]:
     """Helper function to parse requirements file, filtering out empty lines and comments."""
     if not requirements_path.exists():
@@ -39,7 +41,7 @@ extras_require = {
 
 setup(
     name="imsearch_benchmaker",
-    version="0.0.1",
+    version=VERSION,
     description="Framework for creating image search benchmarks with optional adapters",
     long_description=long_description,
     long_description_content_type="text/markdown",
