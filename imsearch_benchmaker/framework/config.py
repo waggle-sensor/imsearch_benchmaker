@@ -17,20 +17,53 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeVar
-
-# Try to import TOML support (tomllib in Python 3.11+, tomli for older versions)
-try:
-    import tomllib  # Python 3.11+
-    HAS_TOML = True
-except ImportError:
-    try:
-        import tomli as tomllib  # Fallback for older Python
-        HAS_TOML = True
-    except ImportError:
-        HAS_TOML = False
+import tomllib
 
 # TypeVar for generic return types in class methods
 T = TypeVar("T", bound="BenchmarkConfig")
+
+# Track if adapters have been discovered to avoid repeated imports
+_ADAPTERS_DISCOVERED = False
+
+def _discover_adapters() -> None:
+    """
+    Automatically discover and import all adapter modules.
+    
+    This function scans the adapters directory and imports each adapter package's
+    __init__.py, which triggers adapter registration. This allows new adapters to
+    be added without modifying framework code.
+    
+    The function uses a global flag to ensure adapters are only discovered once,
+    even if called multiple times.
+    """
+    global _ADAPTERS_DISCOVERED
+    if _ADAPTERS_DISCOVERED:
+        return
+    
+    try:
+        import imsearch_benchmaker.adapters as adapters_pkg
+        import importlib
+        import pkgutil
+        
+        adapters_path = Path(adapters_pkg.__file__).parent
+        
+        # Discover all subpackages in adapters directory
+        for finder, name, ispkg in pkgutil.iter_modules([str(adapters_path)]):
+            if ispkg and not name.startswith("_"):
+                try:
+                    # Import the adapter package's __init__.py which contains registration code
+                    importlib.import_module(f"imsearch_benchmaker.adapters.{name}")
+                except ImportError:
+                    # Silently skip adapters that can't be imported (missing dependencies, etc.)
+                    pass
+                except Exception:
+                    # Silently skip adapters that fail to import for any reason
+                    pass
+        
+        _ADAPTERS_DISCOVERED = True
+    except Exception:
+        # If adapter discovery fails, continue anyway
+        _ADAPTERS_DISCOVERED = True
 
 
 @dataclass(frozen=True)
@@ -335,25 +368,12 @@ class BenchmarkConfig:
         suffix = config_path.suffix.lower()
         
         # Try TOML first
-        if suffix in (".toml", ".tml") and HAS_TOML:
+        if suffix in (".toml", ".tml"):
             return cls.from_toml(config_path)
-        elif suffix in (".toml", ".tml") and not HAS_TOML:
-            raise ValueError(
-                "TOML file provided but tomllib/tomli not available. "
-                "Install with: pip install tomli"
-            )
         
         # Fall back to JSON
         if suffix == ".json":
-            return cls.from_json(config_path)
-        
-        # Try to detect format by content
-        try:
-            if HAS_TOML:
-                return cls.from_toml(config_path)
-        except Exception:
-            pass
-        
+            return cls.from_json(config_path)        
         # Fall back to JSON
         return cls.from_json(config_path)
 
@@ -368,9 +388,6 @@ class BenchmarkConfig:
         Returns:
             BenchmarkConfig instance
         """
-        if not HAS_TOML:
-            raise ValueError("TOML support not available. Install with: pip install tomli")
-        
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         
@@ -450,6 +467,9 @@ class BenchmarkConfig:
         # Import here to avoid circular import
         from .vision import VisionAdapterRegistry
         
+        # Discover and import all adapters to ensure they register themselves
+        _discover_adapters()
+        
         config_class = VisionAdapterRegistry.get_config_class(adapter_name)
         if config_class is None:
             raise ValueError(f"[{cls.__name__}] VisionConfig class not found for adapter '{adapter_name}'. Available adapters: {list(VisionAdapterRegistry.list_adapters())}")
@@ -470,6 +490,9 @@ class BenchmarkConfig:
         # Import here to avoid circular import
         from .judge import JudgeAdapterRegistry
         
+        # Discover and import all adapters to ensure they register themselves
+        _discover_adapters()
+        
         config_class = JudgeAdapterRegistry.get_config_class(adapter_name)
         if config_class is None:
             raise ValueError(f"[{cls.__name__}] JudgeConfig class not found for adapter '{adapter_name}'. Available adapters: {list(JudgeAdapterRegistry.list_adapters())}")
@@ -489,6 +512,9 @@ class BenchmarkConfig:
         """
         # Import here to avoid circular import
         from .scoring import SimilarityAdapterRegistry
+        
+        # Discover and import all adapters to ensure they register themselves
+        _discover_adapters()
         
         if adapter_name:
             config_class = SimilarityAdapterRegistry.get_config_class(adapter_name)
