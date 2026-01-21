@@ -422,6 +422,35 @@ class BenchmarkConfig:
         similarity_config_class = cls._get_similarity_config_class(similarity_adapter)
         
         # Create nested config objects with appropriate classes
+        # Validate and raise error for invalid fields
+        vision_field_names = {f.name for f in fields(vision_config_class)}
+        judge_field_names = {f.name for f in fields(judge_config_class)}
+        similarity_field_names = {f.name for f in fields(similarity_config_class)}
+        
+        if vision_config_data:
+            invalid_vision_fields = set(vision_config_data.keys()) - vision_field_names
+            if invalid_vision_fields:
+                raise ValueError(
+                    f"Invalid fields in vision_config: {sorted(invalid_vision_fields)}. "
+                    f"Valid fields for {vision_config_class.__name__}: {sorted(vision_field_names)}"
+                )
+        
+        if judge_config_data:
+            invalid_judge_fields = set(judge_config_data.keys()) - judge_field_names
+            if invalid_judge_fields:
+                raise ValueError(
+                    f"Invalid fields in judge_config: {sorted(invalid_judge_fields)}. "
+                    f"Valid fields for {judge_config_class.__name__}: {sorted(judge_field_names)}"
+                )
+        
+        if similarity_config_data:
+            invalid_similarity_fields = set(similarity_config_data.keys()) - similarity_field_names
+            if invalid_similarity_fields:
+                raise ValueError(
+                    f"Invalid fields in similarity_config: {sorted(invalid_similarity_fields)}. "
+                    f"Valid fields for {similarity_config_class.__name__}: {sorted(similarity_field_names)}"
+                )
+        
         vision_config = vision_config_class(**vision_config_data) if vision_config_data else vision_config_class()
         judge_config = judge_config_class(**judge_config_data) if judge_config_data else judge_config_class()
         similarity_config = similarity_config_class(**similarity_config_data) if similarity_config_data else similarity_config_class()
