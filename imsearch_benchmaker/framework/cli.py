@@ -1,8 +1,7 @@
 """
-pipeline.py
+cli.py
 
-High-level pipeline functions for creating image search benchmarks.
-Provides both programmatic API and CLI interface.
+CLI entry point for imsearch_benchmaker.
 """
 
 from __future__ import annotations
