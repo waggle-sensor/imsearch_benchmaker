@@ -29,42 +29,27 @@ def _discover_adapters() -> None:
     """
     Automatically discover and import all adapter modules.
     
-    This function scans the adapters directory and imports each adapter package's
-    __init__.py, which triggers adapter registration. This allows new adapters to
-    be added without modifying framework code.
+    This function imports the adapters package's __init__.py, which contains
+    all adapter registrations. This allows new adapters to be added without
+    modifying framework code - just add the registration to adapters/__init__.py.
     
     The function uses a global flag to ensure adapters are only discovered once,
-    even if called multiple times.
+    even if called multiple times. Uses lazy import to avoid circular dependencies.
     """
     global _ADAPTERS_DISCOVERED
     if _ADAPTERS_DISCOVERED:
         return
     
     try:
-        import imsearch_benchmaker.adapters as adapters_pkg
-        import importlib
-        import pkgutil
-        
-        adapters_path = Path(adapters_pkg.__file__).parent
-        
-        # Discover all subpackages in adapters directory
-        for finder, name, ispkg in pkgutil.iter_modules([str(adapters_path)]):
-            if ispkg and not name.startswith("_"):
-                try:
-                    # Import the adapter package's __init__.py which contains registration code
-                    importlib.import_module(f"imsearch_benchmaker.adapters.{name}")
-                except ImportError:
-                    # Silently skip adapters that can't be imported (missing dependencies, etc.)
-                    pass
-                except Exception:
-                    # Silently skip adapters that fail to import for any reason
-                    pass
-        
+        # Import the adapters package, which triggers all adapter registrations
+        import imsearch_benchmaker.adapters  # noqa: F401
+        _ADAPTERS_DISCOVERED = True
+    except ImportError:
+        # Silently skip if adapters package can't be imported
         _ADAPTERS_DISCOVERED = True
     except Exception:
-        # If adapter discovery fails, continue anyway
+        # If adapter discovery fails for any reason, continue anyway
         _ADAPTERS_DISCOVERED = True
-
 
 @dataclass(frozen=True)
 class VisionConfig:
