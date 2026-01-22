@@ -12,7 +12,7 @@ import tempfile
 
 from .config import OpenAIVisionConfig
 from .client import get_openai_client
-from ...framework.vision import Vision, VisionAdapterRegistry
+from ...framework.vision import Vision
 from ...framework.config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from ...framework.vision_types import VisionAnnotation, VisionImage
 from ...framework.io import write_jsonl
@@ -30,7 +30,7 @@ class OpenAIVision(Vision):
     """
 
     @staticmethod
-    def build_json_schema(config: BenchmarkConfig) -> Dict[str, Any]:
+    def build_json_schema(config: BenchmarkConfig) -> Dict[str, Any]: #TODO: use self.config and remove the passed in argument
         """
         Build JSON schema for vision annotation based on config.
         
@@ -56,17 +56,21 @@ class OpenAIVision(Vision):
             required.append(col)
         
         # Add boolean columns
+        # Each column in columns_boolean should be a separate property with boolean type
         for col in config.columns_boolean:
             properties[col] = {"type": "boolean"}
             required.append(col)
         
         # Add tags if controlled_tag_vocab is provided
-        if config.controlled_tag_vocab:
-            properties["tags"] = {
+        # Use column_tags as the key
+        if config.vision_config.controlled_tag_vocab and config.column_tags:
+            properties[config.column_tags] = {
                 "type": "array",
-                "items": {"type": "string", "enum": config.controlled_tag_vocab},
+                "minItems": config.vision_config.min_tags,
+                "maxItems": config.vision_config.max_tags,
+                "items": {"type": "string", "enum": config.vision_config.controlled_tag_vocab},
             }
-            required.append("tags")
+            required.append(config.column_tags)
         
         # Add confidence object if we have taxonomy columns
         if config.columns_taxonomy:
@@ -185,12 +189,45 @@ class OpenAIVision(Vision):
         return body
 
     def parse_response(self, response_body: Dict[str, object], image: VisionImage) -> VisionAnnotation:
+        """
+        Parse OpenAI response body into VisionAnnotation object.
+        
+        Extracts the JSON response and constructs a VisionAnnotation with:
+        - Fields: All fields from the parsed response (excluding tags and confidence)
+        - Tags: List of tags from the column_tags field
+        - Confidence: Dictionary of confidence scores for taxonomy and boolean columns.
+        
+        Args:
+            response_body: Response body dictionary from OpenAI API.
+            image: VisionImage object for this annotation.
+            
+        Returns:
+            VisionAnnotation object with parsed fields, tags, and confidence.
+        """
         parsed = extract_json_from_response_body(response_body)
-        tags = parsed.get("tags") if isinstance(parsed.get("tags"), list) else []
-        confidence = parsed.get("confidence") if isinstance(parsed.get("confidence"), dict) else {}
+        fields = dict(parsed)
+        
+        # Extract tags using column_tags key
+        tags = []
+        if self.config.column_tags and self.config.column_tags in fields:
+            tag_value = fields.pop(self.config.column_tags)
+            if isinstance(tag_value, list):
+                tags = tag_value
+            elif isinstance(tag_value, str):
+                tags = [tag_value]
+        
+        # Extract confidence - only keep taxonomy and boolean columns
+        confidence = {}
+        if "confidence" in fields:
+            conf_dict = fields.pop("confidence")
+            if isinstance(conf_dict, dict):
+                for col in conf_dict.keys():
+                    if col in self.config.columns_taxonomy or col in self.config.columns_boolean:
+                        confidence[col] = conf_dict[col]
+        
         return VisionAnnotation(
             image_id=image.image_id,
-            fields=parsed,
+            fields=fields,
             tags=tags,
             confidence=confidence,
             metadata=image.metadata,
