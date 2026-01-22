@@ -20,6 +20,7 @@ from PIL import Image
 import requests
 from io import BytesIO
 from wordcloud import WordCloud
+from tqdm import tqdm
 
 from .io import read_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
@@ -775,7 +776,6 @@ def calculate_similarity_score(
     col_name: Optional[str] = None,
     adapter_name: Optional[str] = None,
     images_jsonl_path: Optional[Path] = None,
-    progress_interval: int = 10,
     config: Optional[BenchmarkConfig] = None,
 ) -> None:
     """
@@ -787,7 +787,6 @@ def calculate_similarity_score(
         col_name: Name of the column to add the similarity score to. If None, uses config.similarity_config.col_name or defaults to "similarity_score".
         adapter_name: Optional similarity adapter name. If None, uses config.similarity_config.adapter.
         images_jsonl_path: Path to images.jsonl file containing image_id to image_url mappings. If None, uses config.images_jsonl.
-        progress_interval: Log progress every N rows.
         config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
@@ -850,30 +849,37 @@ def calculate_similarity_score(
     successful = 0
     failed = 0
 
-    for idx, row in enumerate(qrels):
-        try:
-            query_text = row.get(config.column_query, "")
-            image_id = row.get(config.column_image_id, "")
-            if not query_text or not image_id:
+    # Use tqdm for progress bar
+    with tqdm(total=total_rows, desc="Calculating similarity scores", unit="image-query-pair") as pbar:
+        for row in qrels:
+            try:
+                query_text = row.get(config.column_query, "")
+                image_id = row.get(config.column_image_id, "")
+                if not query_text or not image_id:
+                    row[col_name] = None
+                    failed += 1
+                    pbar.update(1)
+                    pbar.set_postfix({"success": successful, "failed": failed})
+                    continue
+
+                image_url = image_url_map.get(image_id)
+                if not image_url:
+                    row[col_name] = None
+                    failed += 1
+                    pbar.update(1)
+                    pbar.set_postfix({"success": successful, "failed": failed})
+                    continue
+
+                score = adapter.score(query_text, image_url)
+                row[col_name] = score
+                successful += 1
+                pbar.update(1)
+                pbar.set_postfix({"success": successful, "failed": failed})
+            except Exception:
                 row[col_name] = None
                 failed += 1
-                continue
-
-            image_url = image_url_map.get(image_id)
-            if not image_url:
-                row[col_name] = None
-                failed += 1
-                continue
-
-            score = adapter.score(query_text, image_url)
-            row[col_name] = score
-            successful += 1
-
-            if (idx + 1) % progress_interval == 0 or (idx + 1) == total_rows:
-                pass
-        except Exception:
-            row[col_name] = None
-            failed += 1
+                pbar.update(1)
+                pbar.set_postfix({"success": successful, "failed": failed})
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
