@@ -30,7 +30,7 @@ class OpenAIVision(Vision):
     """
 
     @staticmethod
-    def build_json_schema(config: BenchmarkConfig) -> Dict[str, Any]: #TODO: use self.config and remove the passed in argument
+    def build_json_schema(config: BenchmarkConfig) -> Dict[str, Any]:
         """
         Build JSON schema for vision annotation based on config.
         
