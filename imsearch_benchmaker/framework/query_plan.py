@@ -19,6 +19,19 @@ from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 
 
 def jaccard(a: Set[str], b: Set[str]) -> float:
+    """
+    Calculate Jaccard similarity coefficient between two sets.
+    
+    The Jaccard coefficient is the size of the intersection divided by the size of the union
+    of the two sets. Returns 0.0 if both sets are empty.
+    
+    Args:
+        a: First set of strings.
+        b: Second set of strings.
+        
+    Returns:
+        Jaccard similarity coefficient between 0.0 and 1.0.
+    """
     if not a and not b:
         return 0.0
     inter = len(a & b)
@@ -27,6 +40,20 @@ def jaccard(a: Set[str], b: Set[str]) -> float:
 
 
 def majority_vote(values: List[Any], fallback: str = "unknown") -> Any:
+    """
+    Return the most common value from a list, with deterministic tie-breaking.
+    
+    Counts occurrences of each non-None value and returns the most common one.
+    In case of ties, returns the lexicographically first value. Returns the fallback
+    if all values are None or the list is empty.
+    
+    Args:
+        values: List of values to find the majority of.
+        fallback: Default value to return if no valid values are found.
+        
+    Returns:
+        The most common value, or fallback if no valid values exist.
+    """
     counts = Counter([v for v in values if v is not None])
     if not counts:
         return fallback
@@ -38,12 +65,33 @@ def majority_vote(values: List[Any], fallback: str = "unknown") -> Any:
 
 @dataclass(frozen=True)
 class ImageRec:
+    """
+    Image record containing image metadata for query planning.
+    
+    Attributes:
+        image_id: Unique identifier for the image.
+        facets: Dictionary mapping facet names (taxonomy/boolean columns) to their values.
+        tags: Set of tag strings associated with the image.
+    """
     image_id: str
     facets: Dict[str, Any]
     tags: Set[str]
 
 
 def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Dict[str, ImageRec]:
+    """
+    Load annotations from JSONL file and convert to ImageRec objects.
+    
+    Reads annotation records from a JSONL file and extracts image IDs, tags, and facet
+    values (taxonomy and boolean columns) into ImageRec objects for query planning.
+    
+    Args:
+        path: Path to annotations JSONL file.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Returns:
+        Dictionary mapping image IDs to ImageRec objects.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     out: Dict[str, ImageRec] = {}
     for ann in read_jsonl(path):
@@ -59,6 +107,23 @@ def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Di
 
 
 def derive_query_profile(seed_recs: List[ImageRec], facet_keys: List[str]) -> Dict[str, Any]:
+    """
+    Derive a query profile from seed image records.
+    
+    Creates a profile representing the common characteristics of seed images by:
+    - For boolean facets: Computing the majority boolean value (True if >= 50% are True)
+    - For other facets: Using majority vote to determine the most common value
+    - Aggregating all tags from seed images into a union set
+    
+    Args:
+        seed_recs: List of ImageRec objects representing seed images for a query.
+        facet_keys: List of facet column names to include in the profile.
+        
+    Returns:
+        Dictionary with:
+        - Keys from facet_keys mapped to their profile values
+        - "seed_tags" key containing the union of all tags from seed images
+    """
     profile: Dict[str, Any] = {}
     for key in facet_keys:
         values = [rec.facets.get(key) for rec in seed_recs]
@@ -72,6 +137,21 @@ def derive_query_profile(seed_recs: List[ImageRec], facet_keys: List[str]) -> Di
 
 
 def one_facet_off(img: ImageRec, prof: Dict[str, Any], keys: List[str], off_key: str) -> bool:
+    """
+    Check if an image matches the profile on all facets except one.
+    
+    Returns True if the image matches the profile on all keys except off_key,
+    and differs from the profile on off_key. Used to find near-miss negative examples.
+    
+    Args:
+        img: ImageRec to check against the profile.
+        prof: Query profile dictionary with facet values.
+        keys: List of facet keys to check.
+        off_key: The facet key that is allowed to differ from the profile.
+        
+    Returns:
+        True if image matches profile on all keys except off_key, False otherwise.
+    """
     for k in keys:
         if k == off_key:
             continue
@@ -81,12 +161,38 @@ def one_facet_off(img: ImageRec, prof: Dict[str, Any], keys: List[str], off_key:
 
 
 def score_candidates_by_tags(candidates: List[ImageRec], seed_tags: Set[str]) -> List[Tuple[float, ImageRec]]:
+    """
+    Score candidate images by tag overlap with seed tags.
+    
+    Calculates Jaccard similarity between each candidate's tags and the seed tags,
+    then sorts by similarity (descending) with image_id as tie-breaker.
+    
+    Args:
+        candidates: List of ImageRec objects to score.
+        seed_tags: Set of tags from seed images for the query.
+        
+    Returns:
+        List of (score, ImageRec) tuples sorted by score (descending), then by image_id.
+    """
     scored = [(jaccard(c.tags, seed_tags), c) for c in candidates]
     scored.sort(key=lambda x: (-x[0], x[1].image_id))
     return scored
 
 
 def diversity_key(img: ImageRec, diversity_facets: List[str]) -> Tuple[str, ...]:
+    """
+    Generate a diversity key for an image based on specified facets.
+    
+    Creates a tuple of facet values that can be used to group images for diversity
+    sampling. Images with the same diversity key are considered similar for diversity purposes.
+    
+    Args:
+        img: ImageRec to generate a key for.
+        diversity_facets: List of facet column names to include in the diversity key.
+        
+    Returns:
+        Tuple of string representations of facet values.
+    """
     return tuple(str(img.facets.get(k, "")) for k in diversity_facets)
 
 
@@ -97,6 +203,23 @@ def pick_with_diversity(
     diversity_facets: List[str],
     max_per_divkey: int = 5,
 ) -> List[str]:
+    """
+    Select top-k images from scored candidates while ensuring diversity.
+    
+    Iterates through pre-scored candidates and selects images, ensuring that no more
+    than max_per_divkey images share the same diversity key. Skips images already
+    in the 'already' set and updates it with selected images.
+    
+    Args:
+        scored: List of (score, ImageRec) tuples, pre-sorted by score (descending).
+        k: Number of images to select.
+        already: Set of image IDs to exclude (modified in-place).
+        diversity_facets: List of facet names to use for diversity grouping.
+        max_per_divkey: Maximum number of images to select per diversity key.
+        
+    Returns:
+        List of selected image IDs.
+    """
     picked: List[str] = []
     counts = Counter()
 
@@ -116,15 +239,43 @@ def pick_with_diversity(
     return picked
 
 
-class QueryPlanStrategy(ABC):
+class QueryPlanStrategy(ABC): #TODO: move to config.py
+    """
+    Abstract base class for query plan generation strategies.
+    
+    Query plan strategies define how to select candidate images for each query based on
+    seed images and annotations. Different strategies can implement different selection
+    criteria (e.g., tag overlap, facet matching, diversity constraints).
+    """
+    
     @abstractmethod
     def build(self, annotations: Dict[str, ImageRec], seeds_path: Path, config: BenchmarkConfig) -> List[Dict[str, Any]]:
         """
-        Build query plan rows from annotations + seeds.
+        Build query plan rows from annotations and seed images.
+        
+        Args:
+            annotations: Dictionary mapping image IDs to ImageRec objects.
+            seeds_path: Path to seeds JSONL file containing query seed image IDs.
+            config: BenchmarkConfig instance with query planning parameters.
+            
+        Returns:
+            List of dictionaries, each representing a query plan row with query_id,
+            seed_image_ids, and candidate_image_ids.
         """
 
 
 class TagOverlapQueryPlan(QueryPlanStrategy):
+    """
+    Query plan strategy based on tag overlap and facet matching.
+    
+    Selects negative candidate images for each query using a three-tier approach:
+    - Hard negatives: Images matching core facets with high tag overlap (difficult to distinguish)
+    - Near-miss negatives: Images matching most facets but differing on one (similar but wrong)
+    - Easy negatives: Images with low tag overlap and different core facets (clearly different)
+    
+    Uses diversity constraints to ensure variety in selected candidates.
+    """
+    
     def __init__(
         self,
         neg_total: Optional[int] = None,
@@ -133,6 +284,16 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
         neg_easy: Optional[int] = None,
         random_seed: Optional[int] = None,
     ) -> None:
+        """
+        Initialize TagOverlapQueryPlan strategy.
+        
+        Args:
+            neg_total: Total number of negative candidates per query.
+            neg_hard: Number of hard negative candidates (matching core facets, high tag overlap).
+            neg_nearmiss: Number of near-miss negative candidates (one facet off).
+            neg_easy: Number of easy negative candidates (low tag overlap, different facets).
+            random_seed: Random seed for reproducible candidate selection.
+        """
         self.neg_total = neg_total
         self.neg_hard = neg_hard
         self.neg_nearmiss = neg_nearmiss
@@ -140,6 +301,33 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
         self.random_seed = random_seed
 
     def build(self, annotations: Dict[str, ImageRec], seeds_path: Path, config: BenchmarkConfig) -> List[Dict[str, Any]]:
+        """
+        Build query plan using tag overlap and facet matching strategy.
+        
+        For each query defined in seeds_path:
+        1. Derives a profile from seed images (common facets and tags)
+        2. Selects hard negatives: images matching core facets with high tag overlap
+        3. Selects near-miss negatives: images matching most facets but differing on one
+        4. Selects easy negatives: images with low tag overlap and different core facets
+        5. Combines seed images and negatives into candidate list
+        
+        Uses diversity constraints to limit selections per diversity key and ensures
+        no image is selected multiple times for the same query.
+        
+        Args:
+            annotations: Dictionary mapping image IDs to ImageRec objects.
+            seeds_path: Path to seeds JSONL file containing query definitions.
+            config: BenchmarkConfig instance with query planning parameters.
+            
+        Returns:
+            List of dictionaries, each with:
+            - query_id: Query identifier
+            - seed_image_ids: List of seed image IDs for the query
+            - candidate_image_ids: List of candidate image IDs (seeds + negatives)
+            
+        Raises:
+            ValueError: If negative counts are not properly configured or don't sum correctly.
+        """
         neg_total = self.neg_total if self.neg_total is not None else config.query_plan_neg_total
         neg_hard = self.neg_hard if self.neg_hard is not None else config.query_plan_neg_hard
         neg_nearmiss = self.neg_nearmiss if self.neg_nearmiss is not None else config.query_plan_neg_nearmiss
@@ -264,6 +452,23 @@ def build_query_plan(
     out_path: Optional[Path] = None,
     config: Optional[BenchmarkConfig] = None,
 ) -> List[Dict[str, Any]]:
+    """
+    Build query plan using the specified strategy and optionally write to file.
+    
+    Executes the query plan strategy to generate candidate image selections for each
+    query defined in the seeds file. Optionally writes the results to a JSONL file.
+    
+    Args:
+        annotations: Dictionary mapping image IDs to ImageRec objects from annotations.
+        seeds_path: Path to seeds JSONL file containing query definitions with seed image IDs.
+        strategy: QueryPlanStrategy instance to use for candidate selection.
+        out_path: Optional path to write the query plan JSONL file. If None, results are not written.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Returns:
+        List of dictionaries, each representing a query plan row with query_id,
+        seed_image_ids, and candidate_image_ids.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     rows = strategy.build(annotations, seeds_path, config)
     if out_path is not None:
