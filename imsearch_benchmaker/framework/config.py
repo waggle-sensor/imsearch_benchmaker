@@ -70,6 +70,9 @@ class VisionConfig:
         max_images_per_batch: Maximum number of images to include in a single batch submission.
         max_concurrent_batches: Maximum number of batches to submit concurrently.
         stage: Stage identifier for batch metadata (default: "vision").
+        controlled_tag_vocab: Controlled vocabulary list for tagging by the vision model.
+        min_tags: Minimum number of tags the vision model will include in the tagging.
+        max_tags: Maximum number of tags the vision model will include in the tagging.
     """
     
     adapter: Optional[str] = None
@@ -82,6 +85,9 @@ class VisionConfig:
     max_images_per_batch: Optional[int] = None
     max_concurrent_batches: Optional[int] = None
     stage: Optional[str] = "vision"
+    controlled_tag_vocab: List[str] = field(default_factory=list)
+    min_tags: int = 14
+    max_tags: int = 25
 
 
 @dataclass(frozen=True)
@@ -182,7 +188,6 @@ class BenchmarkConfig:
         _hf_token: Hugging Face API token (sensitive, excluded from exports).
         _hf_repo_id: Hugging Face repository ID for dataset upload.
         _hf_private: Whether the Hugging Face repository should be private.
-        controlled_tag_vocab: Controlled vocabulary list for tagging by the vision adapter.
         vision_config: Vision adapter configuration.
         judge_config: Judge adapter configuration.
         similarity_config: Similarity scoring adapter configuration.
@@ -243,9 +248,6 @@ class BenchmarkConfig:
     _hf_token: Optional[str] = field(default_factory=lambda: os.getenv("HF_TOKEN"))
     _hf_repo_id: Optional[str] = None
     _hf_private: Optional[bool] = None
-
-    # Controlled tag vocabulary
-    controlled_tag_vocab: List[str] = field(default_factory=list)
 
     # Adapter configurations
     vision_config: VisionConfig = field(default_factory=VisionConfig)
