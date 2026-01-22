@@ -122,5 +122,5 @@ def write_cost_summary_csv(summaries: List[CostSummary], output_path: Path) -> N
                 f"{summary.cost_per_token:.8f}",
             ])
     
-    logger.info(f"[COST] Cost summary written to {output_path}")
+    logger.info(f"Cost summary written to {output_path}")
 
