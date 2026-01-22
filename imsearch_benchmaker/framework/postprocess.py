@@ -833,23 +833,32 @@ def generate_dataset_summary(
     sns.set_style("whitegrid")
     plt.rcParams["figure.figsize"] = (12, 8)
 
-    generate_image_proportion_donuts(df, output_dir, config)
-    generate_query_relevancy_distribution(df, output_dir, config)
-    generate_wordclouds(df, output_dir, config)
-    generate_relevance_overview(df, output_dir, config)
-    generate_relevance_by_categorical(df, output_dir, config)
-    generate_query_text_length_distribution(df, output_dir, config)
-    generate_similarity_score_analysis(df, output_dir, config)
-    generate_confidence_analysis(df, output_dir, config)
-    generate_summary_statistics(df, output_dir, config)
-    generate_random_image_sample(df, output_dir, images_jsonl_path, config=config)
-    generate_config_values_table(output_dir, config=config)
+    # List of generation functions with their descriptions
+    generation_tasks = [
+        ("Image proportion donuts", generate_image_proportion_donuts, (df, output_dir, config)),
+        ("Query relevancy distribution", generate_query_relevancy_distribution, (df, output_dir, config)),
+        ("Word clouds", generate_wordclouds, (df, output_dir, config)),
+        ("Relevance overview", generate_relevance_overview, (df, output_dir, config)),
+        ("Relevance by categorical", generate_relevance_by_categorical, (df, output_dir, config)),
+        ("Query text length distribution", generate_query_text_length_distribution, (df, output_dir, config)),
+        ("Similarity score analysis", generate_similarity_score_analysis, (df, output_dir, config)),
+        ("Confidence analysis", generate_confidence_analysis, (df, output_dir, config)),
+        ("Summary statistics", generate_summary_statistics, (df, output_dir, config)),
+        ("Random image sample", generate_random_image_sample, (df, output_dir, images_jsonl_path, config)),
+        ("Config values table", generate_config_values_table, (output_dir, config)),
+        ("Cost summary", _generate_cost_summary, (output_dir, config)),
+    ]
     
-    # Generate cost summary as part of dataset summary
-    try:
-        _generate_cost_summary(output_dir, config)
-    except Exception as e:
-        logger.warning(f"[COST] Failed to generate cost summary: {e}")
+    # Use tqdm to show progress through generation tasks
+    with tqdm(total=len(generation_tasks), desc="Generating dataset summary", unit="task") as pbar:
+        for task_name, task_func, task_args in generation_tasks:
+            try:
+                task_func(*task_args)
+                pbar.set_postfix({"current": task_name})
+            except Exception as e:
+                logger.warning(f"Failed to generate {task_name}: {e}")
+            finally:
+                pbar.update(1)
 
 def _generate_cost_summary(
     output_dir: Path,
@@ -887,9 +896,9 @@ def _generate_cost_summary(
                 )
                 if vision_summary.num_items > 0:
                     summaries.append(vision_summary)
-                    logger.info(f"[COST] Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
+                    logger.info(f"Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
         except Exception as e:
-            logger.warning(f"[COST] Failed to calculate vision costs: {e}")
+            logger.warning(f"Failed to calculate vision costs: {e}")
     
     # Calculate judge costs
     if judge_batch_output_jsonl and judge_batch_output_jsonl.exists():
@@ -902,9 +911,9 @@ def _generate_cost_summary(
                 )
                 if judge_summary.num_items > 0:
                     summaries.append(judge_summary)
-                    logger.info(f"[COST] Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
+                    logger.info(f"Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
         except Exception as e:
-            logger.warning(f"[COST] Failed to calculate judge costs: {e}")
+            logger.warning(f"Failed to calculate judge costs: {e}")
     
     # Aggregate and write CSV
     if summaries:
@@ -913,8 +922,8 @@ def _generate_cost_summary(
         
         csv_path = output_dir / "cost_summary.csv"
         write_cost_summary_csv(summaries, csv_path)
-        logger.info(f"[COST] Cost summary written to {csv_path}")
-        logger.info(f"[COST] Total cost: ${total_summary.total_cost:.2f}")
+        logger.info(f"Cost summary written to {csv_path}")
+        logger.info(f"Total cost: ${total_summary.total_cost:.2f}")
 
 
 def calculate_similarity_score(
