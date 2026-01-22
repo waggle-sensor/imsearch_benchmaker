@@ -386,8 +386,8 @@ def run_all(
     skip_query_plan: bool = False,
     skip_judge: bool = False,
     skip_similarity: bool = False,
-    skip_postprocess: bool = False,
-    skip_huggingface: bool = False,
+    skip_summary: bool = False,
+    skip_upload: bool = False,
 ) -> None:
     """
     Run all steps of the pipeline: preprocess, vision, query_plan, judge.
@@ -406,8 +406,8 @@ def run_all(
         skip_query_plan: If True, skip the query plan step.
         skip_judge: If True, skip the judge step.
         skip_similarity: If True, skip the similarity score step.
-        skip_postprocess: If True, skip the postprocess step.
-        skip_huggingface: If True, skip the huggingface upload step.
+        skip_summary: If True, skip the summary step.
+        skip_upload: If True, skip the huggingface upload step.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
@@ -498,7 +498,7 @@ def run_all(
         logger.info("[PIPELINE] Skipping similarity score step")
     
     # Step 6: Dataset Summary
-    if not skip_postprocess:
+    if not skip_summary:
         print("\n" + "=" * 80)
         print("Step 6: Generating dataset summary")
         print("=" * 80)
@@ -513,7 +513,7 @@ def run_all(
         logger.info("[PIPELINE] Skipping dataset summary step")
 
     # Step 7: Hugging Face Upload
-    if not skip_huggingface:
+    if not skip_upload:
         print("\n" + "=" * 80)
         print("Step 7: Uploading dataset to Hugging Face")
         print("=" * 80)
@@ -1915,17 +1915,6 @@ def build_cli_parser() -> argparse.ArgumentParser:
     summary_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl)")
     summary_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
-    huggingface_parser = postprocess_subparsers.add_parser("upload", help="Upload dataset to Hugging Face")
-    huggingface_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
-    huggingface_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.hf_dataset_dir)")
-    huggingface_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl, required if not using --image-root-dir)")
-    huggingface_parser.add_argument("--image-root-dir", type=Path, help="Optional local image root directory (or use config.image_root_dir, alternative to --images-jsonl)")
-    huggingface_parser.add_argument("--progress-interval", type=int, default=100, help="Progress update interval")
-    huggingface_parser.add_argument("--repo-id", help="Hugging Face repo ID (overrides config)")
-    huggingface_parser.add_argument("--token", help="Hugging Face token (overrides config)")
-    huggingface_parser.add_argument("--private", action="store_true", help="Make repository private (overrides config). If not set, uses config value.")
-    huggingface_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
-    
     # Clean
     clean_parser = subparsers.add_parser("clean", help="Remove intermediate and output files")
     clean_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
@@ -2030,16 +2019,28 @@ def build_cli_parser() -> argparse.ArgumentParser:
     list_batches_parser.add_argument("--adapter", help="Adapter name (overrides config)")
     list_batches_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
+    # Upload
+    upload_parser = subparsers.add_parser("upload", help="Upload dataset to Hugging Face")
+    upload_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
+    upload_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.hf_dataset_dir)")
+    upload_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl, required if not using --image-root-dir)")
+    upload_parser.add_argument("--image-root-dir", type=Path, help="Optional local image root directory (or use config.image_root_dir, alternative to --images-jsonl)")
+    upload_parser.add_argument("--progress-interval", type=int, default=100, help="Progress update interval")
+    upload_parser.add_argument("--repo-id", help="Hugging Face repo ID (overrides config)")
+    upload_parser.add_argument("--token", help="Hugging Face token (overrides config)")
+    upload_parser.add_argument("--private", action="store_true", help="Make repository private (overrides config). If not set, uses config value.")
+    upload_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
     # All (full pipeline)
-    all_parser = subparsers.add_parser("all", help="Run complete pipeline: preprocess -> vision -> plan -> judge -> similarity -> summary -> upload")
+    all_parser = subparsers.add_parser("all", help="Run complete pipeline: preprocess -> vision -> plan -> judge -> postprocess -> upload")
     all_parser.add_argument("--input-dir", type=Path, help="Images directory (or use config.image_root_dir)")
     all_parser.add_argument("--skip-preprocess", action="store_true", help="Skip preprocess step")
     all_parser.add_argument("--skip-vision", action="store_true", help="Skip vision step")
     all_parser.add_argument("--skip-query-plan", action="store_true", help="Skip query plan step")
     all_parser.add_argument("--skip-judge", action="store_true", help="Skip judge step")
-    all_parser.add_argument("--skip-similarity", action="store_true", help="Skip similarity score step")
-    all_parser.add_argument("--skip-postprocess", action="store_true", help="Skip postprocess summary step")
-    all_parser.add_argument("--skip-huggingface", action="store_true", help="Skip Hugging Face upload step")
+    all_parser.add_argument("--skip-similarity", action="store_true", help="Skip postprocess similarity score step")
+    all_parser.add_argument("--skip-summary", action="store_true", help="Skip postprocess summary step")
+    all_parser.add_argument("--skip-upload", action="store_true", help="Skip Hugging Face upload step")
     all_parser.add_argument("--no-wait", action="store_true", help="Don't wait for batch completion (submit only)")
     all_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
@@ -2301,23 +2302,6 @@ def main() -> None:
             )
             output_path = getattr(args, "output_dir", None) or config.summary_output_dir
             logger.info(f"✅ Summary complete -> {output_path}")
-        elif args.postprocess_cmd == "upload":
-            # Handle private flag: if --private is set, use True; otherwise None (will use config)
-            private_value = args.private if args.private else None
-            
-            huggingface(
-                qrels_path=getattr(args, "qrels_jsonl", None),
-                output_dir=getattr(args, "output_dir", None),
-                images_jsonl_path=getattr(args, "images_jsonl", None),
-                image_root_dir=getattr(args, "image_root_dir", None),
-                progress_interval=getattr(args, "progress_interval", 100),
-                repo_id=getattr(args, "repo_id", None),
-                token=getattr(args, "token", None),
-                private=private_value,
-                config=config,
-            )
-            output_path = getattr(args, "output_dir", None) or config.hf_dataset_dir
-            logger.info(f"✅ Hugging Face upload complete -> {output_path}")
     
     elif args.command == "clean":
         run_clean(
@@ -2327,6 +2311,24 @@ def main() -> None:
             include_final_outputs=getattr(args, "include_final_outputs", False),
         )
         logger.info("✅ Clean complete")
+    
+    elif args.command == "upload":
+        # Handle private flag: if --private is set, use True; otherwise None (will use config)
+        private_value = args.private if args.private else None
+        
+        huggingface(
+            qrels_path=getattr(args, "qrels_jsonl", None),
+            output_dir=getattr(args, "output_dir", None),
+            images_jsonl_path=getattr(args, "images_jsonl", None),
+            image_root_dir=getattr(args, "image_root_dir", None),
+            progress_interval=getattr(args, "progress_interval", 100),
+            repo_id=getattr(args, "repo_id", None),
+            token=getattr(args, "token", None),
+            private=private_value,
+            config=config,
+        )
+        output_path = getattr(args, "output_dir", None) or config.hf_dataset_dir
+        logger.info(f"✅ Hugging Face upload complete -> {output_path}")
     
     # Granular Vision Commands
     elif args.command == "vision-make":
@@ -2492,8 +2494,8 @@ def main() -> None:
             skip_query_plan=getattr(args, "skip_query_plan", False),
             skip_judge=getattr(args, "skip_judge", False),
             skip_similarity=getattr(args, "skip_similarity", False),
-            skip_postprocess=getattr(args, "skip_postprocess", False),
-            skip_huggingface=getattr(args, "skip_huggingface", False),
+            skip_summary=getattr(args, "skip_summary", False),
+            skip_upload=getattr(args, "skip_upload", False),
         )
         logger.info("✅ Full pipeline complete!")
 
