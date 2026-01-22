@@ -3,20 +3,14 @@ query_plan.py
 
 Framework utilities for building query plans from annotations + seeds.
 """
-
 from __future__ import annotations
-
-import json
 import random
-from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
-
+from typing import Any, Dict, List, Optional, Set, Tuple
 from .io import read_jsonl, write_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
-
+from .query_plan_types import ImageRec, QueryPlanStrategy
 
 def jaccard(a: Set[str], b: Set[str]) -> float:
     """
@@ -62,22 +56,6 @@ def majority_vote(values: List[Any], fallback: str = "unknown") -> Any:
     top_vals = sorted([v for v, n in most if n == top_count], key=lambda v: str(v))
     return top_vals[0] if top_vals else fallback
 
-
-@dataclass(frozen=True)
-class ImageRec:
-    """
-    Image record containing image metadata for query planning.
-    
-    Attributes:
-        image_id: Unique identifier for the image.
-        facets: Dictionary mapping facet names (taxonomy/boolean columns) to their values.
-        tags: Set of tag strings associated with the image.
-    """
-    image_id: str
-    facets: Dict[str, Any]
-    tags: Set[str]
-
-
 def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Dict[str, ImageRec]:
     """
     Load annotations from JSONL file and convert to ImageRec objects.
@@ -104,7 +82,6 @@ def load_annotations(path: Path, config: Optional[BenchmarkConfig] = None) -> Di
             tags=tags,
         )
     return out
-
 
 def derive_query_profile(seed_recs: List[ImageRec], facet_keys: List[str]) -> Dict[str, Any]:
     """
@@ -135,7 +112,6 @@ def derive_query_profile(seed_recs: List[ImageRec], facet_keys: List[str]) -> Di
     profile["seed_tags"] = set().union(*[r.tags for r in seed_recs]) if seed_recs else set()
     return profile
 
-
 def one_facet_off(img: ImageRec, prof: Dict[str, Any], keys: List[str], off_key: str) -> bool:
     """
     Check if an image matches the profile on all facets except one.
@@ -159,7 +135,6 @@ def one_facet_off(img: ImageRec, prof: Dict[str, Any], keys: List[str], off_key:
             return False
     return img.facets.get(off_key) != prof.get(off_key)
 
-
 def score_candidates_by_tags(candidates: List[ImageRec], seed_tags: Set[str]) -> List[Tuple[float, ImageRec]]:
     """
     Score candidate images by tag overlap with seed tags.
@@ -178,7 +153,6 @@ def score_candidates_by_tags(candidates: List[ImageRec], seed_tags: Set[str]) ->
     scored.sort(key=lambda x: (-x[0], x[1].image_id))
     return scored
 
-
 def diversity_key(img: ImageRec, diversity_facets: List[str]) -> Tuple[str, ...]:
     """
     Generate a diversity key for an image based on specified facets.
@@ -194,7 +168,6 @@ def diversity_key(img: ImageRec, diversity_facets: List[str]) -> Tuple[str, ...]
         Tuple of string representations of facet values.
     """
     return tuple(str(img.facets.get(k, "")) for k in diversity_facets)
-
 
 def pick_with_diversity(
     scored: List[Tuple[float, ImageRec]],
@@ -237,32 +210,6 @@ def pick_with_diversity(
             counts[dk] += 1
 
     return picked
-
-
-class QueryPlanStrategy(ABC): #TODO: move to config.py
-    """
-    Abstract base class for query plan generation strategies.
-    
-    Query plan strategies define how to select candidate images for each query based on
-    seed images and annotations. Different strategies can implement different selection
-    criteria (e.g., tag overlap, facet matching, diversity constraints).
-    """
-    
-    @abstractmethod
-    def build(self, annotations: Dict[str, ImageRec], seeds_path: Path, config: BenchmarkConfig) -> List[Dict[str, Any]]:
-        """
-        Build query plan rows from annotations and seed images.
-        
-        Args:
-            annotations: Dictionary mapping image IDs to ImageRec objects.
-            seeds_path: Path to seeds JSONL file containing query seed image IDs.
-            config: BenchmarkConfig instance with query planning parameters.
-            
-        Returns:
-            List of dictionaries, each representing a query plan row with query_id,
-            seed_image_ids, and candidate_image_ids.
-        """
-
 
 class TagOverlapQueryPlan(QueryPlanStrategy):
     """
@@ -443,7 +390,6 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
             })
 
         return rows_out
-
 
 def build_query_plan(
     annotations: Dict[str, ImageRec],
