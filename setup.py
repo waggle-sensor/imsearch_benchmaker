@@ -17,27 +17,26 @@ def parse_requirements(requirements_path: Path) -> list[str]:
     lines = requirements_path.read_text(encoding="utf-8").splitlines()
     return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
 
-# Read README for long description
-readme_file = Path(__file__).parent / "README.md"
-long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
-
 # Get requirements from files
 core_requirements_path = Path(__file__).parent / "imsearch_benchmaker/requirements.txt"
 openai_requirements_path = Path(__file__).parent / "imsearch_benchmaker/adapters/openai/requirements.txt"
 local_requirements_path = Path(__file__).parent / "imsearch_benchmaker/adapters/local/requirements.txt"
 
 # Core dependencies
-core_dependencies = parse_requirements(core_requirements_path)
+CORE_DEPS = parse_requirements(core_requirements_path)
 
 # Optional dependencies for different adapters
 openai_deps = parse_requirements(openai_requirements_path)
 local_deps = parse_requirements(local_requirements_path)
-
-extras_require = {
+EXTRAS = {
     "openai": openai_deps,
     "local": local_deps,
     "all": openai_deps + local_deps,
 }
+
+# Read README for long description
+readme_file = Path(__file__).parent / "README.md"
+long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else "Framework for creating image search benchmarks"
 
 setup(
     name="imsearch_benchmaker",
@@ -50,8 +49,8 @@ setup(
     url="https://github.com/waggle-sensor/imsearch_benchmaker",
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
     python_requires=">=3.11",
-    install_requires=core_dependencies,
-    extras_require=extras_require,
+    install_requires=CORE_DEPS,
+    extras_require=EXTRAS,
     entry_points={
         "console_scripts": [
             "benchmaker=imsearch_benchmaker.framework.cli:main",
