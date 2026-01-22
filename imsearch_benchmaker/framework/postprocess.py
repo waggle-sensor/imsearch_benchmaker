@@ -38,10 +38,31 @@ logger = logging.getLogger(__name__)
 
 
 def read_jsonl_list(path: Path) -> List[Dict[str, Any]]:
+    """
+    Read all rows from a JSONL file into a list.
+    
+    Args:
+        path: Path to the JSONL file to read.
+        
+    Returns:
+        List of dictionaries, one per line in the JSONL file.
+    """
     return list(read_jsonl(path))
 
 
 def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate donut charts showing image proportions for each taxonomy column.
+    
+    Creates donut charts displaying the distribution of images across different
+    categories for each taxonomy column in the dataset. Charts are arranged in
+    a grid layout with up to 3 columns.
+    
+    Args:
+        df: DataFrame containing the dataset with taxonomy columns.
+        output_dir: Directory to save the output PNG file.
+        config: BenchmarkConfig instance with column definitions.
+    """
     available_categorical = [col for col in config.columns_taxonomy if col in df.columns]
     if not available_categorical:
         return
@@ -136,6 +157,18 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
     logger.info(f"Image proportion donuts saved to {output_dir / 'image_proportion_donuts.png'}")
 
 def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate visualizations and statistics for query relevancy distribution.
+    
+    Creates bar charts and histograms showing the relevance rate per query and
+    the distribution of relevance rates across all queries. Also saves a CSV
+    file with per-query relevance statistics.
+    
+    Args:
+        df: DataFrame containing query and relevance data.
+        output_dir: Directory to save output PNG and CSV files.
+        config: BenchmarkConfig instance with column definitions.
+    """
     if config.column_query_id not in df.columns or config.column_relevance not in df.columns:
         return
 
@@ -167,6 +200,20 @@ def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, co
     logger.info(f"Query relevancy stats saved to {output_dir / 'query_relevancy_stats.csv'}")
 
 def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate word clouds from image summaries and tags.
+    
+    Creates word cloud visualizations from:
+    - Image summaries (if column_summary is available)
+    - Image tags (if column_tags is available)
+    
+    Also saves a CSV file with the top 50 most frequent tags.
+    
+    Args:
+        df: DataFrame containing summary and tag data.
+        output_dir: Directory to save output PNG and CSV files.
+        config: BenchmarkConfig instance with column definitions.
+    """
     if config.column_summary and config.column_summary in df.columns:
         summaries = df[config.column_summary].dropna().astype(str).tolist()
         if summaries:
@@ -215,6 +262,17 @@ def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkCon
             logger.info(f"Top tags saved to {output_dir / 'top_tags.csv'}")
 
 def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate overview visualizations of relevance distribution.
+    
+    Creates a pie chart and bar chart showing the overall distribution of
+    relevant vs. not relevant labels in the dataset.
+    
+    Args:
+        df: DataFrame containing relevance data.
+        output_dir: Directory to save the output PNG file.
+        config: BenchmarkConfig instance with column definitions.
+    """
     if config.column_relevance not in df.columns:
         return
 
@@ -238,6 +296,17 @@ def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: Benc
 
 
 def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate stacked bar charts showing relevance distribution by taxonomy categories.
+    
+    Creates a separate visualization for each taxonomy column, showing the percentage
+    of relevant vs. not relevant images within each category.
+    
+    Args:
+        df: DataFrame containing relevance and taxonomy data.
+        output_dir: Directory to save output PNG files (one per taxonomy column).
+        config: BenchmarkConfig instance with column definitions.
+    """
     if config.column_relevance not in df.columns:
         return
 
@@ -257,6 +326,17 @@ def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config
             logger.info(f"Relevance by {col} saved to {output_dir / f'relevance_by_{col}.png'}")
 
 def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate histogram showing the distribution of query text lengths.
+    
+    Creates a histogram with mean line showing the character length distribution
+    of query texts in the dataset.
+    
+    Args:
+        df: DataFrame containing query text data.
+        output_dir: Directory to save the output PNG file.
+        config: BenchmarkConfig instance with column definitions.
+    """
     if config.column_query not in df.columns:
         return
 
@@ -277,6 +357,19 @@ def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, 
 
 
 def generate_summary_statistics(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate summary statistics CSV file for the dataset.
+    
+    Calculates and saves key statistics including:
+    - Total qrel rows, unique queries, unique images
+    - Relevant/not relevant pair counts and relevance rate
+    - Unique values for each taxonomy column
+    
+    Args:
+        df: DataFrame containing the dataset.
+        output_dir: Directory to save the output CSV file.
+        config: BenchmarkConfig instance with column definitions.
+    """
     stats = {
         "Total Qrel Rows": len(df),
         "Unique Queries": df[config.column_query_id].nunique() if config.column_query_id in df.columns else "N/A",
@@ -301,6 +394,19 @@ def generate_random_image_sample(
     images_jsonl_path: Optional[Path] = None,
     config: Optional[BenchmarkConfig] = None,
 ) -> None:
+    """
+    Generate a grid visualization of randomly sampled images from the dataset.
+    
+    Samples up to 50 random images from the dataset and displays them in a grid
+    layout. Images are loaded from URLs or local paths. Failed image loads are
+    indicated with error messages.
+    
+    Args:
+        df: DataFrame containing image IDs.
+        output_dir: Directory to save the output PNG file.
+        images_jsonl_path: Optional path to images.jsonl for URL mapping.
+        config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+    """
     config = config or DEFAULT_BENCHMARK_CONFIG
     if config.column_image_id not in df.columns:
         return
@@ -373,6 +479,23 @@ def generate_random_image_sample(
 
 
 def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate comprehensive analysis of similarity scores in the dataset.
+    
+    Creates multiple visualizations and statistics:
+    - Histogram of similarity score distribution
+    - Box plots comparing scores by relevance label
+    - Violin plots showing score distributions
+    - Cumulative distribution function
+    - Per-query similarity score statistics
+    
+    Also saves CSV files with statistics by relevance and overall statistics.
+    
+    Args:
+        df: DataFrame containing similarity scores and relevance data.
+        output_dir: Directory to save output PNG and CSV files.
+        config: BenchmarkConfig instance with column definitions.
+    """
     col_name = config.similarity_config.col_name
     if col_name not in df.columns:
         return
@@ -489,6 +612,21 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
         logger.info(f"Similarity score statistics by query saved to {output_dir / f'{col_name}_by_query_stats.csv'}")
 
 def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate analysis of confidence scores for taxonomy and boolean columns.
+    
+    Creates visualizations and statistics for confidence scores:
+    - Histograms of confidence distribution per category
+    - Box plots comparing confidence across categories
+    - Bar charts comparing mean confidence by category and relevance label
+    
+    Also saves CSV files with overall and per-category confidence statistics.
+    
+    Args:
+        df: DataFrame containing confidence score data.
+        output_dir: Directory to save output PNG and CSV files.
+        config: BenchmarkConfig instance with column definitions.
+    """
     if not config.column_confidence or config.column_confidence not in df.columns:
         return
 
