@@ -50,19 +50,17 @@ class CLIP(Similarity):
                 "transformers library is required for local CLIP adapter. "
                 "Install it with: pip install transformers torch torchvision"
             )
-        if not isinstance(self.config.similarity_config, CLIPConfig):
-            raise ValueError("local CLIP adapter requires CLIPConfig in config.similarity_config.")
-        if not self.model:
-            raise ValueError("local CLIP adapter requires a model name.")
         
         config = config or DEFAULT_BENCHMARK_CONFIG
         self.config = config
-        similarity_cfg = config.similarity_config
         
-        # Get values from config or parameters
-        self.model_name = model or similarity_cfg.model or "openai/clip-vit-base-patch32"
+        # Validate config after setting self.config
+        if not isinstance(self.config.similarity_config, CLIPConfig):
+            raise ValueError("local CLIP adapter requires CLIPConfig in config.similarity_config.")
         
         # Get CLIP-specific config if available
+        similarity_cfg = config.similarity_config
+        self.model_name = model or similarity_cfg.model or "openai/clip-vit-base-patch32"
         self.device_str = device or similarity_cfg.device or "auto"
         self.torch_dtype_str = torch_dtype or similarity_cfg.torch_dtype
         self.use_safetensors = use_safetensors if use_safetensors is not None else (similarity_cfg.use_safetensors if similarity_cfg.use_safetensors is not None else True)
