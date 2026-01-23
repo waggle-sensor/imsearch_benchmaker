@@ -186,6 +186,7 @@ class BenchmarkConfig:
         qrels_with_score_jsonl: Path to output qrels with similarity scores JSONL file.
         summary_output_dir: Output directory for dataset summary visualizations.
         hf_dataset_dir: Output directory for Hugging Face dataset format.
+        hf_dataset_card_path: Optional path to a user-provided README.md file following Hugging Face dataset card format. If provided, will be uploaded as README.md to the repository root after the dataset is uploaded.
         _hf_token: Hugging Face API token (sensitive, excluded from exports).
         _hf_repo_id: Hugging Face repository ID for dataset upload, if not provided, the dataset will not be uploaded to Hugging Face.
         _hf_private: Whether the Hugging Face repository should be private.
@@ -244,6 +245,7 @@ class BenchmarkConfig:
     qrels_with_score_jsonl: Optional[str] = None
     summary_output_dir: Optional[str] = None
     hf_dataset_dir: Optional[str] = None
+    hf_dataset_card_path: Optional[str] = None
 
     # Hugging Face configuration (sensitive fields use _ prefix)
     _hf_token: Optional[str] = field(default_factory=lambda: os.getenv("HF_TOKEN"))

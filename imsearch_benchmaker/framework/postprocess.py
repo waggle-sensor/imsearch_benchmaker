@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +23,7 @@ import requests
 from io import BytesIO
 from wordcloud import WordCloud
 from tqdm import tqdm
+from datasets import Dataset, Image as HFImage
 
 from .io import read_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
@@ -846,7 +849,7 @@ def generate_dataset_summary(
         ("Summary statistics", generate_summary_statistics, (df, output_dir, config)),
         ("Random image sample", generate_random_image_sample, (df, output_dir, images_jsonl_path, config)),
         ("Config values table", generate_config_values_table, (output_dir, config)),
-        ("Cost summary", _generate_cost_summary, (output_dir, config)),
+        ("Cost summary", generate_cost_summary, (output_dir, config)),
     ]
     
     # Use tqdm to show progress through generation tasks
@@ -860,7 +863,7 @@ def generate_dataset_summary(
             finally:
                 pbar.update(1)
 
-def _generate_cost_summary(
+def generate_cost_summary(
     output_dir: Path,
     config: BenchmarkConfig,
 ) -> None:
@@ -1043,76 +1046,82 @@ def calculate_similarity_score(
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def huggingface(
-    qrels_path: Optional[Path] = None,
-    output_dir: Optional[Path] = None,
-    images_jsonl_path: Optional[Path] = None,
-    image_root_dir: Optional[Path] = None,
-    repo_id: Optional[str] = None,
+def _upload_dataset_card(
+    dataset_card_path: Path,
+    repo_id: str,
+    api: Any,
     token: Optional[str] = None,
-    private: Optional[bool] = None,
-    config: Optional[BenchmarkConfig] = None,
 ) -> None:
     """
-    Prepare and optionally upload the dataset to Hugging Face Hub.
+    Upload a dataset card (README.md) to a Hugging Face repository.
     
     Args:
-        qrels_path: Path to the qrels.jsonl file. If None, uses config.qrels_with_score_jsonl or config.qrels_jsonl.
-        output_dir: Directory to save the prepared dataset. If None, uses config.hf_dataset_dir.
-        images_jsonl_path: Optional path to images.jsonl file. If None, uses config.images_jsonl.
-        image_root_dir: Optional root directory for local images. If None, uses config.image_root_dir.
-        repo_id: Hugging Face repository ID. If None, uses config._hf_repo_id.
-        token: Hugging Face token. If None, uses config._hf_token.
-        private: Whether to create a private repository. If None, uses config._hf_private.
-        config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        dataset_card_path: Path to the dataset card file.
+        repo_id: Hugging Face repository ID.
+        api: HfApi instance for uploading files.
+        token: Optional Hugging Face token.
         
     Note:
-        Whether to use local image paths or URLs is determined by config.upload_use_local_image_paths.
-        If True, image_root_dir must be provided. If False or None, images_jsonl_path must be provided
-        to get image URLs.
+        If the file doesn't exist or upload fails, a warning is logged but no exception is raised.
     """
-    config = config or DEFAULT_BENCHMARK_CONFIG
-    
-    # Get paths from config if not provided
-    qrels_path = Path(qrels_path) if qrels_path else (Path(config.qrels_with_score_jsonl) if config.qrels_with_score_jsonl else (Path(config.qrels_jsonl) if config.qrels_jsonl else None))
-    output_dir = Path(output_dir) if output_dir else (Path(config.hf_dataset_dir) if config.hf_dataset_dir else None)
-    images_jsonl_path = Path(images_jsonl_path) if images_jsonl_path else (Path(config.images_jsonl) if config.images_jsonl else None)
-    image_root_dir = Path(image_root_dir) if image_root_dir else (Path(config.image_root_dir) if config.image_root_dir else None)
-    
-    if qrels_path is None:
-        raise ValueError("qrels_path must be provided or set in config.qrels_jsonl or config.qrels_with_score_jsonl")
-    if output_dir is None:
-        raise ValueError("output_dir must be provided or set in config.hf_dataset_dir")
-    try:
-        from datasets import Dataset, Image as HFImage
-    except ImportError as exc:
-        raise ImportError("The 'datasets' library is required. Install it with: pip install datasets") from exc
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    qrels = read_jsonl_list(qrels_path)
-    
-    # Determine whether to use local images based on config or explicit parameter
-    use_local_images = config.upload_use_local_image_paths if config.upload_use_local_image_paths is not None else (image_root_dir is not None)
-
-    if use_local_images:
-        if image_root_dir is None:
-            raise ValueError("image_root_dir must be provided when upload_use_local_image_paths is True in config")
-        image_root_dir = Path(image_root_dir)
-        if not image_root_dir.exists():
-            raise ValueError(f"Image root directory does not exist: {image_root_dir}")
-        logger.info(f"Using local images from: {image_root_dir}")
+    if dataset_card_path.exists():
+        try:
+            logger.info(f"Uploading dataset card from: {dataset_card_path}")
+            api.upload_file(
+                path_or_fileobj=str(dataset_card_path),
+                path_in_repo="README.md",
+                repo_id=repo_id,
+                repo_type="dataset",
+                token=token,
+            )
+            logger.info(f"Dataset card (README.md) successfully uploaded")
+        except Exception as e:
+            logger.warning(f"Failed to upload dataset card: {e}")
     else:
-        if not images_jsonl_path or not images_jsonl_path.exists():
-            raise ValueError("images_jsonl_path must be provided when upload_use_local_image_paths is False or not set in config")
-        images_data = read_jsonl_list(images_jsonl_path)
-        image_url_map: Dict[str, str] = {}
-        for img_row in images_data:
-            img_id = img_row.get(config.column_image_id)
-            img_url = img_row.get(config.image_url_temp_column)
-            if img_id and img_url:
-                image_url_map[img_id] = img_url
-        logger.info(f"Using image URLs from: {images_jsonl_path}")
+        logger.warning(f"Dataset card path provided but file does not exist: {dataset_card_path}")
 
+
+def _build_image_url_map(images_jsonl_path: Path, config: BenchmarkConfig) -> Dict[str, str]:
+    """
+    Build a mapping from image IDs to image URLs from images.jsonl.
+    
+    Args:
+        images_jsonl_path: Path to images.jsonl file.
+        config: BenchmarkConfig instance.
+        
+    Returns:
+        Dictionary mapping image IDs to image URLs.
+    """
+    images_data = read_jsonl_list(images_jsonl_path)
+    image_url_map: Dict[str, str] = {}
+    for img_row in images_data:
+        img_id = img_row.get(config.column_image_id)
+        img_url = img_row.get(config.image_url_temp_column)
+        if img_id and img_url:
+            image_url_map[img_id] = img_url
+    return image_url_map
+
+
+def _prepare_dataset_rows(
+    qrels: List[Dict[str, Any]],
+    config: BenchmarkConfig,
+    use_local_images: bool,
+    image_root_dir: Optional[Path],
+    image_url_map: Optional[Dict[str, str]],
+) -> tuple[List[Dict[str, Any]], int, int]:
+    """
+    Prepare dataset rows from qrels, resolving image paths.
+    
+    Args:
+        qrels: List of qrel dictionaries.
+        config: BenchmarkConfig instance.
+        use_local_images: Whether to use local image paths.
+        image_root_dir: Root directory for local images (if use_local_images is True).
+        image_url_map: Mapping from image IDs to URLs (if use_local_images is False).
+        
+    Returns:
+        Tuple of (dataset_rows, successful_count, missing_count).
+    """
     dataset_rows = []
     missing_count = 0
     successful_count = 0
@@ -1126,6 +1135,7 @@ def huggingface(
                 pbar.set_postfix({"success": successful_count, "failed": missing_count})
                 continue
 
+            # Resolve image path
             if use_local_images:
                 source_path = image_root_dir / img_id
                 if not source_path.exists():
@@ -1142,7 +1152,7 @@ def huggingface(
                     continue
                 image_path = image_url_map[img_id]
             
-            # Successfully found image path, create dataset row
+            # Create dataset row
             dataset_row = row.copy()
             dataset_row[config.column_image] = image_path
             dataset_rows.append(dataset_row)
@@ -1150,11 +1160,182 @@ def huggingface(
             pbar.update(1)
             pbar.set_postfix({"success": successful_count, "failed": missing_count})
 
+    return dataset_rows, successful_count, missing_count
+
+
+def _initialize_hf_api(token: Optional[str] = None) -> Any:
+    """
+    Initialize and authenticate Hugging Face API client.
+    
+    Args:
+        token: Optional Hugging Face token.
+        
+    Returns:
+        HfApi instance.
+        
+    Raises:
+        ImportError: If huggingface_hub is not installed.
+    """
+    try:
+        from huggingface_hub import login, HfApi
+    except ImportError as exc:
+        raise ImportError("The 'huggingface_hub' library is required. Install it with: pip install huggingface_hub") from exc
+
+    if token:
+        login(token=token)
+        return HfApi(token=token)
+    else:
+        api = HfApi()
+        api.whoami()
+        return api
+
+
+def _upload_summary_folder(
+    summary_dir: Path,
+    repo_id: str,
+    api: Any,
+    token: Optional[str] = None,
+) -> None:
+    """
+    Upload summary folder contents to a Hugging Face repository.
+    
+    Filters out hidden files before uploading.
+    
+    Args:
+        summary_dir: Path to the summary output directory.
+        repo_id: Hugging Face repository ID.
+        api: HfApi instance for uploading files.
+        token: Optional Hugging Face token.
+        
+    Note:
+        If the directory doesn't exist, is not a directory, is empty, or upload fails,
+        appropriate messages are logged but no exception is raised.
+    """
+    if not summary_dir.exists():
+        logger.info(f"Summary of dataset does not exist, skipping upload")
+        return
+    
+    if not summary_dir.is_dir():
+        logger.warning(f"Summary output path exists but is not a directory: {summary_dir}")
+        return
+    
+    # Get all files and filter out hidden files, directories, and macOS metadata files
+    all_files = list(summary_dir.glob("*"))
+    files = [
+        f for f in all_files
+        if f.is_file()
+        and not f.name.startswith(".")
+    ]
+    
+    if not files:
+        logger.info(f"Summary folder exists but is empty or contains only filtered files, skipping upload")
+        return
+    
+    try:
+        logger.info(f"Uploading summary folder from: {summary_dir} ({len(files)} files)")
+        # Create a temporary directory with only the filtered files to avoid uploading hidden files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            for file in files:
+                shutil.copy2(file, temp_path / file.name)
+            
+            api.upload_folder(
+                folder_path=str(temp_path),
+                path_in_repo="",
+                repo_id=repo_id,
+                repo_type="dataset",
+                token=token,
+            )
+        logger.info(f"Summary folder successfully uploaded ({len(files)} files)")
+    except Exception as e:
+        logger.warning(f"Failed to upload summary folder: {e}")
+
+
+def huggingface(
+    qrels_path: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
+    images_jsonl_path: Optional[Path] = None,
+    image_root_dir: Optional[Path] = None,
+    repo_id: Optional[str] = None,
+    token: Optional[str] = None,
+    private: Optional[bool] = None,
+    config: Optional[BenchmarkConfig] = None,
+) -> None:
+    """
+    Prepare and optionally upload the dataset to Hugging Face Hub.
+    
+    After the main dataset is uploaded, optionally uploads:
+    - Dataset card (README.md) from config.hf_dataset_card_path if provided
+    - Summary folder contents from config.summary_output_dir if it exists
+    
+    Args:
+        qrels_path: Path to the qrels.jsonl file. If None, uses config.qrels_with_score_jsonl or config.qrels_jsonl.
+        output_dir: Directory to save the prepared dataset. If None, uses config.hf_dataset_dir.
+        images_jsonl_path: Optional path to images.jsonl file. If None, uses config.images_jsonl.
+        image_root_dir: Optional root directory for local images. If None, uses config.image_root_dir.
+        repo_id: Hugging Face repository ID. If None, uses config._hf_repo_id.
+        token: Hugging Face token. If None, uses config._hf_token.
+        private: Whether to create a private repository. If None, uses config._hf_private.
+        config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Note:
+        Whether to use local image paths or URLs is determined by config.upload_use_local_image_paths.
+        If True, image_root_dir must be provided. If False or None, images_jsonl_path must be provided
+        to get image URLs.
+        
+        Dataset card and summary folder are uploaded after the main dataset upload completes.
+        Both are optional - if not provided or if upload fails, the operation continues without error.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Resolve paths from config if not provided
+    qrels_path = qrels_path or config.qrels_with_score_jsonl or config.qrels_jsonl
+    if not qrels_path:
+        raise ValueError("qrels_path must be provided or set in config.qrels_jsonl or config.qrels_with_score_jsonl")
+    qrels_path = Path(qrels_path)
+    
+    output_dir = output_dir or config.hf_dataset_dir
+    if not output_dir:
+        raise ValueError("output_dir must be provided or set in config.hf_dataset_dir")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    images_jsonl_path = Path(images_jsonl_path) if images_jsonl_path else (Path(config.images_jsonl) if config.images_jsonl else None)
+    image_root_dir = Path(image_root_dir) if image_root_dir else (Path(config.image_root_dir) if config.image_root_dir else None)
+    
+    # Load qrels
+    qrels = read_jsonl_list(qrels_path)
+    
+    # Determine image source and validate
+    use_local_images = config.upload_use_local_image_paths if config.upload_use_local_image_paths is not None else (image_root_dir is not None)
+    image_url_map: Optional[Dict[str, str]] = None
+    
+    if use_local_images:
+        if image_root_dir is None or not image_root_dir.exists():
+            raise ValueError(f"image_root_dir must exist when using local images: {image_root_dir}")
+        logger.info(f"Using local images from: {image_root_dir}")
+    else:
+        if not images_jsonl_path or not images_jsonl_path.exists():
+            raise ValueError("images_jsonl_path must exist when using image URLs")
+        image_url_map = _build_image_url_map(images_jsonl_path, config)
+        logger.info(f"Using image URLs from: {images_jsonl_path}")
+
+    # Prepare dataset rows
+    dataset_rows, successful_count, missing_count = _prepare_dataset_rows(
+        qrels=qrels,
+        config=config,
+        use_local_images=use_local_images,
+        image_root_dir=image_root_dir,
+        image_url_map=image_url_map,
+    )
+
+    # Create Hugging Face dataset
     dataset = Dataset.from_list(dataset_rows)
     dataset = dataset.cast_column("image", HFImage())
     dataset.save_to_disk(str(output_dir / "dataset"))
     logger.info(f"Saved dataset to: {output_dir / 'dataset'}")
 
+    # Create dataset metadata
     metadata = {
         "total_rows": len(dataset_rows),
         "total_qrels": len(qrels),
@@ -1166,26 +1347,35 @@ def huggingface(
         json.dump(metadata, f, indent=2)
     logger.info(f"Saved dataset metadata to: {output_dir / 'dataset_metadata.json'}")
 
+    # Upload to Hugging Face Hub if repo_id is provided
     repo_id = repo_id or config._hf_repo_id
+    if not repo_id:
+        logger.info("Skipping Hugging Face upload because repo_id was not provided")
+        return
+    
     token = token or config._hf_token
-    if private is None:
-        private = config._hf_private if config._hf_private is not None else False
-
-    if repo_id:
-        logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
-        try:
-            from huggingface_hub import login, HfApi
-        except ImportError as exc:
-            raise ImportError("The 'huggingface_hub' library is required. Install it with: pip install huggingface_hub") from exc
-
-        if token:
-            login(token=token)
-        else:
-            api = HfApi()
-            api.whoami()
-
-        dataset.push_to_hub(repo_id=repo_id, private=private)
-        logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
-        logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")
-    else:
-        logger.info(f"Skipping Hugging Face upload because repo_id was not provided")
+    private = private if private is not None else (config._hf_private if config._hf_private is not None else False)
+    
+    logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
+    api = _initialize_hf_api(token=token)
+    
+    dataset.push_to_hub(repo_id=repo_id, private=private)
+    logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
+    logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")
+    
+    # Upload optional additional files
+    if config.hf_dataset_card_path:
+        _upload_dataset_card(
+            dataset_card_path=Path(config.hf_dataset_card_path),
+            repo_id=repo_id,
+            api=api,
+            token=token,
+        )
+    
+    if config.summary_output_dir:
+        _upload_summary_folder(
+            summary_dir=Path(config.summary_output_dir),
+            repo_id=repo_id,
+            api=api,
+            token=token,
+        )
