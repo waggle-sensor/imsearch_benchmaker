@@ -574,11 +574,11 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
 
     overall_stats = {
         "Total Rows": len(similarity_score_df),
-        "Mean {col_name}": f"{similarity_score_df[col_name].mean():.4f}",
-        "Median {col_name}": f"{similarity_score_df[col_name].median():.4f}",
-        "Std Dev": f"{similarity_score_df[col_name].std():.4f}",
-        "Min {col_name}": f"{similarity_score_df[col_name].min():.4f}",
-        "Max {col_name}": f"{similarity_score_df[col_name].max():.4f}",
+        f"Mean {col_name}": f"{similarity_score_df[col_name].mean():.4f}",
+        f"Median {col_name}": f"{similarity_score_df[col_name].median():.4f}",
+        f"Std Dev": f"{similarity_score_df[col_name].std():.4f}",
+        f"Min {col_name}": f"{similarity_score_df[col_name].min():.4f}",
+        f"Max {col_name}": f"{similarity_score_df[col_name].max():.4f}",
         "25th Percentile": f"{similarity_score_df[col_name].quantile(0.25):.4f}",
         "75th Percentile": f"{similarity_score_df[col_name].quantile(0.75):.4f}",
     }
@@ -587,9 +587,9 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
         relevant_df = similarity_score_df[similarity_score_df[config.column_relevance] == 1]
         not_relevant_df = similarity_score_df[similarity_score_df[config.column_relevance] == 0]
         if len(relevant_df) > 0:
-            overall_stats["Mean {col_name} (Relevant)"] = f"{relevant_df[col_name].mean():.4f}"
+            overall_stats[f"Mean {col_name} (Relevant)"] = f"{relevant_df[col_name].mean():.4f}"
         if len(not_relevant_df) > 0:
-            overall_stats["Mean {col_name} (Not Relevant)"] = f"{not_relevant_df[col_name].mean():.4f}"
+            overall_stats[f"Mean {col_name} (Not Relevant)"] = f"{not_relevant_df[col_name].mean():.4f}"
 
     stats_df = pd.DataFrame(list(overall_stats.items()), columns=["Metric", "Value"])
     stats_df.to_csv(output_dir / f"{col_name}_overall_stats.csv", index=False)
@@ -597,12 +597,12 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
 
     if config.column_query_id in similarity_score_df.columns:
         query_similarity_score_stats = similarity_score_df.groupby(config.column_query_id)[col_name].agg(["mean", "std", "count"]).reset_index()
-        query_similarity_score_stats.columns = ["Query ID", "Mean {col_name}", "Std Dev", "Count"]
-        query_similarity_score_stats = query_similarity_score_stats.sort_values("Mean {col_name}", ascending=False)
+        query_similarity_score_stats.columns = ["Query ID", f"Mean {col_name}", "Std Dev", "Count"]
+        query_similarity_score_stats = query_similarity_score_stats.sort_values(f"Mean {col_name}", ascending=False)
         fig, ax = plt.subplots(figsize=(14, 8))
-        ax.bar(range(len(query_similarity_score_stats)), query_similarity_score_stats["Mean {col_name}"], color="coral")
+        ax.bar(range(len(query_similarity_score_stats)), query_similarity_score_stats[f"Mean {col_name}"], color="coral")
         ax.set_title(f"Mean {col_name} per Query", fontsize=14, fontweight="bold")
-        ax.set_xlabel("Query (sorted by mean {col_name})", fontsize=12)
+        ax.set_xlabel(f"Query (sorted by mean {col_name})", fontsize=12)
         ax.set_ylabel(f"Mean {col_name}", fontsize=12)
         ax.grid(axis="y", alpha=0.3)
         plt.tight_layout()
