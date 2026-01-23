@@ -176,6 +176,7 @@ class BenchmarkConfig:
         image_base_url: Base URL for constructing image URLs from relative paths.
         image_url_temp_column: Column name for temporary image URLs used for retrieving images in the pipeline.
         image_root_dir: Input directory containing image files for preprocessing.
+        upload_use_local_image_paths: Whether to use local image paths or URLs for uploading to Hugging Face.
         meta_json: Path to metadata JSON file for preprocessing.
         images_jsonl: Path to input images JSONL file.
         seeds_jsonl: Path to input seeds JSONL file.
@@ -186,7 +187,7 @@ class BenchmarkConfig:
         summary_output_dir: Output directory for dataset summary visualizations.
         hf_dataset_dir: Output directory for Hugging Face dataset format.
         _hf_token: Hugging Face API token (sensitive, excluded from exports).
-        _hf_repo_id: Hugging Face repository ID for dataset upload.
+        _hf_repo_id: Hugging Face repository ID for dataset upload, if not provided, the dataset will not be uploaded to Hugging Face.
         _hf_private: Whether the Hugging Face repository should be private.
         vision_config: Vision adapter configuration.
         judge_config: Judge adapter configuration.
