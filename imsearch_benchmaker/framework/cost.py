@@ -118,8 +118,8 @@ def write_cost_summary_csv(summaries: List[CostSummary], output_path: Path) -> N
                 summary.total_image_output_tokens,
                 round(summary.total_cost, 2),
                 summary.num_items,
-                round(summary.cost_per_item, 6),
-                round(summary.cost_per_token, 8),
+                f"{summary.cost_per_item:.6f}",
+                f"{summary.cost_per_token:.8f}",
             ])
     
     logger.info(f"Cost summary written to {output_path}")
