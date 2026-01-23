@@ -270,6 +270,7 @@ class BenchmarkConfig:
     # image URL configuration
     image_base_url: Optional[str] = None 
     image_url_temp_column: str = "image_url"
+    upload_use_local_image_paths: Optional[bool] = False
 
     def required_qrels_columns(self) -> List[str]:
         """

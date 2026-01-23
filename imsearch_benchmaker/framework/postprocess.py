@@ -1067,6 +1067,11 @@ def huggingface(
         token: Hugging Face token. If None, uses config._hf_token.
         private: Whether to create a private repository. If None, uses config._hf_private.
         config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Note:
+        Whether to use local image paths or URLs is determined by config.upload_use_local_image_paths.
+        If True, image_root_dir must be provided. If False or None, images_jsonl_path must be provided
+        to get image URLs.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
@@ -1087,15 +1092,19 @@ def huggingface(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     qrels = read_jsonl_list(qrels_path)
-    use_local_images = image_root_dir is not None
+    
+    # Determine whether to use local images based on config or explicit parameter
+    use_local_images = config.upload_use_local_image_paths if config.upload_use_local_image_paths is not None else (image_root_dir is not None)
 
     if use_local_images:
+        if image_root_dir is None:
+            raise ValueError("image_root_dir must be provided when upload_use_local_image_paths is True in config")
         image_root_dir = Path(image_root_dir)
         if not image_root_dir.exists():
             raise ValueError(f"Image root directory does not exist: {image_root_dir}")
     else:
         if not images_jsonl_path or not images_jsonl_path.exists():
-            raise ValueError("Either image_root_dir or images_jsonl_path must be provided.")
+            raise ValueError("images_jsonl_path must be provided when upload_use_local_image_paths is False or not set in config")
         images_data = read_jsonl_list(images_jsonl_path)
         image_url_map: Dict[str, str] = {}
         for img_row in images_data:
