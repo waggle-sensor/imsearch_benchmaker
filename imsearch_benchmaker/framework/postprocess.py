@@ -1048,7 +1048,6 @@ def huggingface(
     output_dir: Optional[Path] = None,
     images_jsonl_path: Optional[Path] = None,
     image_root_dir: Optional[Path] = None,
-    progress_interval: int = 100,
     repo_id: Optional[str] = None,
     token: Optional[str] = None,
     private: Optional[bool] = None,
@@ -1062,7 +1061,6 @@ def huggingface(
         output_dir: Directory to save the prepared dataset. If None, uses config.hf_dataset_dir.
         images_jsonl_path: Optional path to images.jsonl file. If None, uses config.images_jsonl.
         image_root_dir: Optional root directory for local images. If None, uses config.image_root_dir.
-        progress_interval: Log progress every N rows.
         repo_id: Hugging Face repository ID. If None, uses config._hf_repo_id.
         token: Hugging Face token. If None, uses config._hf_token.
         private: Whether to create a private repository. If None, uses config._hf_private.
@@ -1102,6 +1100,7 @@ def huggingface(
         image_root_dir = Path(image_root_dir)
         if not image_root_dir.exists():
             raise ValueError(f"Image root directory does not exist: {image_root_dir}")
+        logger.info(f"Using local images from: {image_root_dir}")
     else:
         if not images_jsonl_path or not images_jsonl_path.exists():
             raise ValueError("images_jsonl_path must be provided when upload_use_local_image_paths is False or not set in config")
@@ -1112,37 +1111,49 @@ def huggingface(
             img_url = img_row.get(config.image_url_temp_column)
             if img_id and img_url:
                 image_url_map[img_id] = img_url
+        logger.info(f"Using image URLs from: {images_jsonl_path}")
 
     dataset_rows = []
     missing_count = 0
-    for idx, row in enumerate(qrels):
-        img_id = row.get(config.column_image_id)
-        if not img_id:
-            missing_count += 1
-            continue
+    successful_count = 0
 
-        if use_local_images:
-            source_path = image_root_dir / img_id
-            if not source_path.exists():
+    with tqdm(total=len(qrels), desc="Preparing dataset rows", unit="row") as pbar:
+        for row in qrels:
+            img_id = row.get(config.column_image_id)
+            if not img_id:
                 missing_count += 1
+                pbar.update(1)
+                pbar.set_postfix({"success": successful_count, "failed": missing_count})
                 continue
-            image_path = str(source_path.resolve())
-        else:
-            if img_id not in image_url_map:
-                missing_count += 1
-                continue
-            image_path = image_url_map[img_id]
 
-        dataset_row = row.copy()
-        dataset_row[config.column_image] = image_path
-        dataset_rows.append(dataset_row)
-
-        if (idx + 1) % progress_interval == 0:
-            pass
+            if use_local_images:
+                source_path = image_root_dir / img_id
+                if not source_path.exists():
+                    missing_count += 1
+                    pbar.update(1)
+                    pbar.set_postfix({"success": successful_count, "failed": missing_count})
+                    continue
+                image_path = str(source_path.resolve())
+            else:
+                if img_id not in image_url_map:
+                    missing_count += 1
+                    pbar.update(1)
+                    pbar.set_postfix({"success": successful_count, "failed": missing_count})
+                    continue
+                image_path = image_url_map[img_id]
+            
+            # Successfully found image path, create dataset row
+            dataset_row = row.copy()
+            dataset_row[config.column_image] = image_path
+            dataset_rows.append(dataset_row)
+            successful_count += 1
+            pbar.update(1)
+            pbar.set_postfix({"success": successful_count, "failed": missing_count})
 
     dataset = Dataset.from_list(dataset_rows)
     dataset = dataset.cast_column("image", HFImage())
     dataset.save_to_disk(str(output_dir / "dataset"))
+    logger.info(f"Saved dataset to: {output_dir / 'dataset'}")
 
     metadata = {
         "total_rows": len(dataset_rows),
@@ -1153,6 +1164,7 @@ def huggingface(
     }
     with open(output_dir / "dataset_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
+    logger.info(f"Saved dataset metadata to: {output_dir / 'dataset_metadata.json'}")
 
     repo_id = repo_id or config._hf_repo_id
     token = token or config._hf_token
@@ -1160,6 +1172,7 @@ def huggingface(
         private = config._hf_private if config._hf_private is not None else False
 
     if repo_id:
+        logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
         try:
             from huggingface_hub import login, HfApi
         except ImportError as exc:
@@ -1172,4 +1185,7 @@ def huggingface(
             api.whoami()
 
         dataset.push_to_hub(repo_id=repo_id, private=private)
-
+        logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
+        logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")
+    else:
+        logger.info(f"Skipping Hugging Face upload because repo_id was not provided")

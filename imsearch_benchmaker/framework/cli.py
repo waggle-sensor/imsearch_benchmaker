@@ -522,7 +522,6 @@ def run_all(
             output_dir=None,  # Use config.hf_dataset_dir
             images_jsonl_path=None,  # Use config.images_jsonl
             image_root_dir=None,  # Use config.image_root_dir
-            progress_interval=100,
             repo_id=None,  # Use config._hf_repo_id
             token=None,  # Use config._hf_token
             private=None,  # Use config._hf_private
@@ -2025,7 +2024,6 @@ def build_cli_parser() -> argparse.ArgumentParser:
     upload_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.hf_dataset_dir)")
     upload_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl, required if not using --image-root-dir)")
     upload_parser.add_argument("--image-root-dir", type=Path, help="Optional local image root directory (or use config.image_root_dir, alternative to --images-jsonl)")
-    upload_parser.add_argument("--progress-interval", type=int, default=100, help="Progress update interval")
     upload_parser.add_argument("--repo-id", help="Hugging Face repo ID (overrides config)")
     upload_parser.add_argument("--token", help="Hugging Face token (overrides config)")
     upload_parser.add_argument("--private", action="store_true", help="Make repository private (overrides config). If not set, uses config value.")
@@ -2321,7 +2319,6 @@ def main() -> None:
             output_dir=getattr(args, "output_dir", None),
             images_jsonl_path=getattr(args, "images_jsonl", None),
             image_root_dir=getattr(args, "image_root_dir", None),
-            progress_interval=getattr(args, "progress_interval", 100),
             repo_id=getattr(args, "repo_id", None),
             token=getattr(args, "token", None),
             private=private_value,
