@@ -13,6 +13,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,6 +25,7 @@ from io import BytesIO
 from wordcloud import WordCloud
 from tqdm import tqdm
 from datasets import Dataset, Image as HFImage
+from huggingface_hub import login, HfApi
 
 from .io import read_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
@@ -1049,8 +1051,7 @@ def calculate_similarity_score(
 def _upload_dataset_card(
     dataset_card_path: Path,
     repo_id: str,
-    api: Any,
-    token: Optional[str] = None,
+    client: HfApi,
 ) -> None:
     """
     Upload a dataset card (README.md) to a Hugging Face repository.
@@ -1058,8 +1059,7 @@ def _upload_dataset_card(
     Args:
         dataset_card_path: Path to the dataset card file.
         repo_id: Hugging Face repository ID.
-        api: HfApi instance for uploading files.
-        token: Optional Hugging Face token.
+        client: HfApi instance for uploading files.
         
     Note:
         If the file doesn't exist or upload fails, a warning is logged but no exception is raised.
@@ -1067,12 +1067,11 @@ def _upload_dataset_card(
     if dataset_card_path.exists():
         try:
             logger.info(f"Uploading dataset card from: {dataset_card_path}")
-            api.upload_file(
+            client.upload_file(
                 path_or_fileobj=str(dataset_card_path),
                 path_in_repo="README.md",
                 repo_id=repo_id,
-                repo_type="dataset",
-                token=token,
+                repo_type="dataset"
             )
             logger.info(f"Dataset card (README.md) successfully uploaded")
         except Exception as e:
@@ -1163,7 +1162,7 @@ def _prepare_dataset_rows(
     return dataset_rows, successful_count, missing_count
 
 
-def _initialize_hf_api(token: Optional[str] = None) -> Any:
+def _initialize_hf_client(token: Optional[str] = None) -> HfApi:
     """
     Initialize and authenticate Hugging Face API client.
     
@@ -1176,11 +1175,6 @@ def _initialize_hf_api(token: Optional[str] = None) -> Any:
     Raises:
         ImportError: If huggingface_hub is not installed.
     """
-    try:
-        from huggingface_hub import login, HfApi
-    except ImportError as exc:
-        raise ImportError("The 'huggingface_hub' library is required. Install it with: pip install huggingface_hub") from exc
-
     if token:
         login(token=token)
         return HfApi(token=token)
@@ -1193,8 +1187,7 @@ def _initialize_hf_api(token: Optional[str] = None) -> Any:
 def _upload_summary_folder(
     summary_dir: Path,
     repo_id: str,
-    api: Any,
-    token: Optional[str] = None,
+    client: HfApi,
 ) -> None:
     """
     Upload summary folder contents to a Hugging Face repository.
@@ -1204,8 +1197,7 @@ def _upload_summary_folder(
     Args:
         summary_dir: Path to the summary output directory.
         repo_id: Hugging Face repository ID.
-        api: HfApi instance for uploading files.
-        token: Optional Hugging Face token.
+        client: HfApi instance for uploading files.
         
     Note:
         If the directory doesn't exist, is not a directory, is empty, or upload fails,
@@ -1239,12 +1231,11 @@ def _upload_summary_folder(
             for file in files:
                 shutil.copy2(file, temp_path / file.name)
             
-            api.upload_folder(
+            client.upload_folder(
                 folder_path=str(temp_path),
                 path_in_repo="",
                 repo_id=repo_id,
-                repo_type="dataset",
-                token=token,
+                repo_type="dataset"
             )
         logger.info(f"Summary folder successfully uploaded ({len(files)} files)")
     except Exception as e:
@@ -1357,25 +1348,26 @@ def huggingface(
     private = private if private is not None else (config._hf_private if config._hf_private is not None else False)
     
     logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
-    api = _initialize_hf_api(token=token)
+    client = _initialize_hf_client(token=token)
     
-    dataset.push_to_hub(repo_id=repo_id, private=private)
+    dataset.push_to_hub(repo_id=repo_id, private=private, token=token)
     logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
     logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")
     
+    #wait to ensure the dataset repo is created
+    time.sleep(5)
+
     # Upload optional additional files
     if config.hf_dataset_card_path:
         _upload_dataset_card(
             dataset_card_path=Path(config.hf_dataset_card_path),
             repo_id=repo_id,
-            api=api,
-            token=token,
+            client=client,
         )
     
     if config.summary_output_dir:
         _upload_summary_folder(
             summary_dir=Path(config.summary_output_dir),
             repo_id=repo_id,
-            api=api,
-            token=token,
+            client=client,
         )
