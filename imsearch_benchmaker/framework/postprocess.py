@@ -1332,7 +1332,12 @@ def huggingface(
     logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
     client = _initialize_hf_client(token=token)
     
-    dataset.push_to_hub(repo_id=repo_id, private=private, token=token)
+    dataset.push_to_hub(
+        repo_id=repo_id, 
+        private=private, 
+        token=token,
+        commit_message="Uploaded dataset using imsearch_benchmaker",
+    )
     logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
     logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")
     
