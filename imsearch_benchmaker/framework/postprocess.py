@@ -1188,17 +1188,16 @@ def _upload_summary_folder(
     summary_dir: Path,
     repo_id: str,
     client: HfApi,
+    ignore_patterns: List[str] | str = ["__pycache__", ".*"],
 ) -> None:
     """
     Upload summary folder contents to a Hugging Face repository.
-    
-    Filters out hidden files before uploading.
     
     Args:
         summary_dir: Path to the summary output directory.
         repo_id: Hugging Face repository ID.
         client: HfApi instance for uploading files.
-        
+        ignore_patterns: Patterns to ignore when uploading. Defaults to ["__pycache__", ".*"].
     Note:
         If the directory doesn't exist, is not a directory, is empty, or upload fails,
         appropriate messages are logged but no exception is raised.
@@ -1211,33 +1210,16 @@ def _upload_summary_folder(
         logger.warning(f"Summary output path exists but is not a directory: {summary_dir}")
         return
     
-    # Get all files and filter out hidden files, directories, and macOS metadata files
-    all_files = list(summary_dir.glob("*"))
-    files = [
-        f for f in all_files
-        if f.is_file()
-        and not f.name.startswith(".")
-    ]
-    
-    if not files:
-        logger.info(f"Summary folder exists but is empty or contains only filtered files, skipping upload")
-        return
-    
     try:
-        logger.info(f"Uploading summary folder from: {summary_dir} ({len(files)} files)")
-        # Create a temporary directory with only the filtered files to avoid uploading hidden files
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            for file in files:
-                shutil.copy2(file, temp_path / file.name)
-            
-            client.upload_folder(
-                folder_path=str(temp_path),
-                path_in_repo="",
+        logger.info(f"Uploading summary folder from: {summary_dir}")
+        client.upload_folder(
+                folder_path=str(summary_dir),
+                path_in_repo="summary",
                 repo_id=repo_id,
-                repo_type="dataset"
+                repo_type="dataset",
+                ignore_patterns=ignore_patterns
             )
-        logger.info(f"Summary folder successfully uploaded ({len(files)} files)")
+        logger.info(f"Summary folder successfully uploaded")
     except Exception as e:
         logger.warning(f"Failed to upload summary folder: {e}")
 
