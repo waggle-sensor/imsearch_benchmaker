@@ -187,7 +187,7 @@ class BenchmarkConfig:
         summary_output_dir: Output directory for dataset summary visualizations.
         hf_dataset_dir: Output directory for Hugging Face dataset format.
         hf_dataset_card_path: Optional path to a user-provided README.md file following Hugging Face dataset card format. If provided, will be uploaded as README.md to the repository root after the dataset is uploaded.
-        _hf_token: Hugging Face API token (sensitive, excluded from exports).
+        _hf_token: Hugging Face API token (sensitive, excluded from exports). If not provided, uses environment variable HF_TOKEN.
         _hf_repo_id: Hugging Face repository ID for dataset upload, if not provided, the dataset will not be uploaded to Hugging Face.
         _hf_private: Whether the Hugging Face repository should be private.
         vision_config: Vision adapter configuration.
