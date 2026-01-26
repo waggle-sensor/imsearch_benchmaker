@@ -1,0 +1,23 @@
+{
+    "default": {
+      "license": "UNKNOWN",
+      "doi": "UNKNOWN"
+    },
+    "prefixes": [
+      {
+        "prefix": "sage/",
+        "license": "UNKNOWN",
+        "doi": "10.1109/ICSENS.2016.7808975"
+      },
+      {
+        "prefix": "wildfire/",
+        "license": "CC BY 4.0",
+        "doi": "10.3390/f14091697"
+      },
+      {
+        "prefix": "figlib/",
+        "license": "CC BY 4.0",
+        "doi": "2112.08598"
+      }
+    ]
+}

@@ -1,0 +1,12 @@
+Metric,Value
+Total Qrel Rows,1300
+Unique Queries,100
+Unique Images,133
+Relevant Pairs,230
+Not Relevant Pairs,1070
+Relevance Rate,17.69%
+Unique viewpoint values,4
+Unique plume_stage values,5
+Unique lighting values,4
+Unique confounder_type values,6
+Unique environment_type values,7

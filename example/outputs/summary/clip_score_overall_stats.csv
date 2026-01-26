@@ -1,0 +1,11 @@
+Metric,Value
+Total Rows,1300
+Mean clip_score,3.6378
+Median clip_score,3.6641
+Std Dev,1.1630
+Min clip_score,-0.5059
+Max clip_score,6.1874
+25th Percentile,2.8303
+75th Percentile,4.5538
+Mean clip_score (Relevant),4.7596
+Mean clip_score (Not Relevant),3.3966

@@ -1,0 +1,196 @@
+# Example Configuration
+# This config file maps Example settings to the imsearch_benchmaker framework
+
+# log level
+log_level = "INFO"
+
+#dataset description
+benchmark_name = "FireBench"
+benchmark_description = "A benchmark for fire science image retrieval"
+benchmark_author = "John Doe"
+benchmark_author_email = "john.doe@example.com"
+benchmark_author_affiliation = "Example University"
+benchmark_author_orcid = "0000-0000-0000-0000"
+benchmark_author_github = "john-doe"
+
+# Column names (matching FireBenchMaker structure)
+column_image = "image"
+column_image_id = "image_id"
+column_mime_type = "mime_type"
+column_license = "license"
+column_doi = "doi"
+column_query = "query_text"
+column_query_id = "query_id"
+column_relevance = "relevance_label"
+column_tags = "tags"
+column_summary = "summary"
+column_confidence = "confidence"
+
+# Image URL configuration
+image_base_url = "https://web.lcrc.anl.gov/public/waggle/datasets/FireBench/images"
+image_url_temp_column = "image_url"
+
+# File paths
+image_root_dir = "/tmp/FireBench/images"
+meta_json = "rights_map.json"
+images_jsonl = "inputs/images.jsonl"
+seeds_jsonl = "inputs/seeds.jsonl"
+annotations_jsonl = "outputs/annotations.jsonl"
+query_plan_jsonl = "outputs/query_plan.jsonl"
+qrels_jsonl = "outputs/firebench_qrels.jsonl"
+qrels_with_score_jsonl = "outputs/firebench_qrels_with_similarity_score.jsonl"
+summary_output_dir = "outputs/summary"
+hf_dataset_dir = "outputs/hf_dataset"
+hf_dataset_card_path = "dataset_card.md"
+
+# Query planning
+query_plan_num_seeds = 100  # Number of seed images to use for query generation
+query_plan_neg_total = 12
+query_plan_neg_hard = 4
+query_plan_neg_nearmiss = 4
+query_plan_neg_easy = 4
+query_plan_random_seed = 42
+query_plan_seed_image_ids_column = "seed_image_ids"
+query_plan_candidate_image_ids_column = "candidate_image_ids"
+
+# Hugging Face configuration (sensitive fields use _ prefix)
+_hf_repo_id = "exampleorganization/NewExample"
+_hf_private = false
+
+# Boolean columns
+columns_boolean = ["flame_visible"]
+
+# Taxonomy columns (locked taxonomy for FireBench)
+[columns_taxonomy]
+viewpoint = ["fixed_long_range", "handheld", "aerial", "other", "unknown"]
+plume_stage = ["incipient", "developing", "mature", "residual", "none", "unknown"]
+lighting = ["day", "dusk", "night", "ir_nir", "unknown"]
+confounder_type = ["cloud", "fog_marine_layer", "dust", "haze", "sun_glare", "none", "unknown"]
+environment_type = [
+    "forest", "grassland", "shrubland", "mountainous", "urban_wui", "coastal",
+    "desert", "agricultural", "water", "other", "unknown"
+]
+
+# Vision adapter configuration (OpenAI)
+[vision_config]
+adapter = "openai"
+model = "gpt-5-mini"
+system_prompt = """You are labeling wildfire imagery for a fire-science retrieval benchmark.
+Output MUST be valid JSON matching the schema. Do not include extra keys.
+Use the allowed taxonomy values exactly.
+Be conservative: if unsure, choose 'unknown'.
+Tagging rules:
+- Prefer tags that help retrieval and false-positive analysis (smoke vs fog/haze/cloud/glare).
+- Avoid redundant near-duplicates; pick the most specific tag."""
+user_prompt = """Analyze the image and output JSON with:
+- summary: <= 30 words, factual, no speculation
+- viewpoint, plume_stage, flame_visible, lighting, confounder_type, environment_type
+- tags: choose 12-18 tags ONLY from the provided enum list for the tags field
+- confidence: 0..1 per field (viewpoint, plume_stage, confounder_type, environment_type)"""
+max_output_tokens = 4000
+reasoning_effort = "low"
+image_detail = "low"  # "low" saves tokens
+max_images_per_batch = 900
+max_concurrent_batches = 1
+completion_window = "24h"  # Completion window for the batch
+
+# Pricing configuration (required for cost calculation)
+# Prices are per million tokens. All values must be explicitly set.
+price_per_million_input_tokens = 0.125  # Text input tokens
+price_per_million_output_tokens = 1.00  # Text output tokens
+price_per_million_cached_input_tokens = 0.0125  # Text cached input tokens
+price_per_million_image_input_tokens = 0.125  # Image input tokens
+price_per_million_image_output_tokens = 1.00  # Image output tokens
+
+# Controlled tag vocabulary
+min_tags = 14
+max_tags = 25
+controlled_tag_vocab = [
+    # --- Fire / smoke presence ---
+    "smoke_present", "no_smoke_visible", "flame_visible", "no_flame_visible", "glow_visible", "no_glow_visible",
+    "active_fire_suspected", "no_fire_visible",
+    # --- Smoke morphology / dynamics ---
+    "thin_smoke", "moderate_smoke", "dense_smoke", "diffuse_smoke", "patchy_smoke",
+    "rising_plume", "horizontal_smoke", "wind_sheared_plume", "columnar_plume", "billowing_plume",
+    "low_lying_smoke", "valley_smoke", "ridge_smoke", "canopy_level_smoke",
+    "smoke_source_visible", "smoke_source_not_visible",
+    "multiple_plumes", "single_plume",
+    # --- Fire behavior cues (visual only) ---
+    "flame_front", "spotting_suspected", "torching_suspected", "crown_fire_suspected", "surface_fire_suspected",
+    "smoldering_suspected",
+    # --- Terrain / land cover ---
+    "forest", "conifer_forest", "deciduous_forest", "mixed_forest",
+    "grassland", "shrubland", "chaparral", "woodland",
+    "mountainous", "hills", "flat_terrain", "canyon", "valley", "ridgeline",
+    "coastal", "desert", "agricultural", "wetland", "water_body",
+    "urban", "suburban", "wildland_urban_interface",
+    # --- Scene structures / human features ---
+    "road_visible", "trail_visible", "powerlines_visible", "buildings_visible", "industrial_area",
+    "smokestack_visible", "vehicle_visible", "volcano_visible",
+    # --- Atmospherics / visibility ---
+    "clear_air", "low_contrast", "high_contrast", "reduced_visibility", "good_visibility",
+    "backlit", "frontlit", "side_lit", "sun_in_frame", "sun_near_horizon",
+    "glare_present", "lens_flare_present",
+    # --- Confounders (critical for false positives) ---
+    "fog_present", "marine_layer_present", "haze_present", "dust_present", "clouds_present", "overcast",
+    "cloud_deck", "cloud_shadows", "blown_out_sky",
+    "steam_present", "industrial_plume_present",
+    # --- Weather cues (visual only) ---
+    "windy_suspected", "calm_suspected", "precipitation_visible", "rain_visible", "snow_visible",
+    # --- Time / lighting ---
+    "daylight", "dusk_twilight", "night", "artificial_lights_visible",
+    "ir_nir_imagery", "thermal_like",
+    # --- Camera / viewpoint cues ---
+    "fixed_camera", "handheld_camera", "aerial_view",
+    "long_range_view", "telephoto_view", "wide_angle_view",
+    "horizon_visible", "sky_dominant", "ground_dominant",
+    "stable_frame", "motion_blur", "camera_shake", "thermal_view",
+    # --- Composition / scale ---
+    "close_up", "mid_range", "far_range",
+    "foreground_trees", "foreground_structures", "foreground_terrain",
+    "background_mountains", "background_ocean", "background_city",
+    # --- Smoke color / optical cues ---
+    "white_smoke", "gray_smoke", "dark_smoke", "brown_smoke",
+    "transparent_smoke", "opaque_smoke",
+    # --- Event context cues (visual) ---
+    "multiple_smoke_sources", "isolated_smoke_source",
+    "smoke_over_ridge", "smoke_in_valley", "smoke_near_horizon",
+    "plume_dispersing", "plume_intensifying_suspected",
+    # --- Quality / artifacts ---
+    "low_resolution", "high_resolution", "compression_artifacts", "sensor_noise",
+]
+
+# Judge adapter configuration (OpenAI)
+[judge_config]
+adapter = "openai"
+model = "gpt-5-mini"
+system_prompt = """You are a fire scientist creating and judging an image-retrieval benchmark.
+You will receive a query seed (1-3 seed images described by text) and a list of candidates.
+DO NOT use file names, dataset sources, IDs, or rights info for relevance.
+Judge relevance ONLY from the summaries + facet metadata provided.
+Output MUST be valid JSON matching the schema.
+Binary relevance only: 1 relevant, 0 not relevant."""
+user_prompt = """Tasks:
+1) Write a realistic fire-scientist query_text (what someone would ask for in a search engine) describing the target phenomenon.
+2) Label each candidate image as relevant (1) or not relevant (0) to that query.
+Be consistent with the query and try to make the query as concise as possible."""
+max_output_tokens = 8000
+reasoning_effort = "medium"
+max_queries_per_batch = 600
+max_candidates = 100
+max_concurrent_batches = 1
+completion_window = "24h"  # Completion window for the batch
+
+# Pricing configuration (required for cost calculation)
+# Prices are per million tokens. All values must be explicitly set.
+price_per_million_input_tokens = 0.125  # Text input tokens 
+price_per_million_output_tokens = 1.00  # Text output tokens
+price_per_million_cached_input_tokens = 0.0125  # Text cached input tokens
+
+# Similarity adapter configuration (CLIP)
+[similarity_config]
+adapter = "local_clip"
+model = "apple/DFN5B-CLIP-ViT-H-14-378"
+col_name = "clip_score"
+device = "cpu"  # Device to run inference on 
+use_safetensors = true  # Use safetensors format for model loading 

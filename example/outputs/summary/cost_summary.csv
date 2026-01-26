@@ -1,0 +1,4 @@
+Phase,Total Input Tokens,Total Cached Tokens,Total Uncached Input Tokens,Total Output Tokens,Total Image Input Tokens,Total Image Output Tokens,Total Cost (USD),Num Items,Cost Per Item (USD),Cost Per Token (USD)
+vision,353470,0,353470,95393,0,0,0.14,133,0.001049,0.00000031
+judge,413252,0,413252,148059,0,0,0.2,100,0.001997,0.00000036
+total,766722,0,766722,243452,0,0,0.34,233,0.001456,0.00000034

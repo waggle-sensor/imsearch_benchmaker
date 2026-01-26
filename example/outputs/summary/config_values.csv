@@ -1,0 +1,102 @@
+Config Variable,Value,Type
+annotations_jsonl,/Volumes/data/outputs/annotations.jsonl,str
+benchmark_author,Francisco Lozano,str
+benchmark_author_affiliation,Northwestern University,str
+benchmark_author_email,francisco.lozano@northwestern.edu,str
+benchmark_author_github,FranciscoLozCoding,str
+benchmark_author_orcid,0009-0003-8823-4046,str
+benchmark_description,A benchmark for fire science image retrieval,str
+benchmark_name,FireBench,str
+column_confidence,confidence,str
+column_doi,doi,str
+column_image,image,str
+column_image_id,image_id,str
+column_license,license,str
+column_mime_type,mime_type,str
+column_query,query_text,str
+column_query_id,query_id,str
+column_relevance,relevance_label,str
+column_summary,summary,str
+column_tags,tags,str
+columns_boolean,['flame_visible'],list
+columns_taxonomy,"{'viewpoint': ['fixed_long_range', 'handheld', 'aerial', 'other', 'unknown'], 'plume_stage': ['incipient', 'developing', 'mature', 'residual', 'none', 'unknown'], 'lighting': ['day', 'dusk', 'night', 'ir_nir', 'unknown'], 'confounder_type': ['cloud', 'fog_marine_layer', 'dust', 'haze', 'sun_glare', 'none', 'unknown'], 'environment_type': ['forest', 'grassland', 'shrubland', 'mountainous', 'urban_wui', 'coastal', 'desert', 'agricultural', 'water', 'other', 'unknown']}",dict
+hf_dataset_dir,/Volumes/data/outputs/hf_dataset,str
+image_base_url,https://web.lcrc.anl.gov/public/waggle/datasets/FireBench/images,str
+image_root_dir,/tmp/FireBench/images,str
+image_url_temp_column,image_url,str
+images_jsonl,/Volumes/data/inputs/images.jsonl,str
+judge_config.adapter,openai,str
+judge_config.completion_window,24h,str
+judge_config.max_candidates,100,int
+judge_config.max_concurrent_batches,1,int
+judge_config.max_output_tokens,8000,int
+judge_config.max_queries_per_batch,600,int
+judge_config.model,gpt-5-mini,str
+judge_config.price_per_million_cached_input_tokens,0.0125,float
+judge_config.price_per_million_input_tokens,0.125,float
+judge_config.price_per_million_output_tokens,1.0,float
+judge_config.reasoning_effort,medium,str
+judge_config.stage,judge,str
+judge_config.system_prompt,"You are a fire scientist creating and judging an image-retrieval benchmark.
+You will receive a query seed (1-3 seed images described by text) and a list of candidates.
+DO NOT use file names, dataset sources, IDs, or rights info for relevance.
+Judge relevance ONLY from the summaries + facet metadata provided.
+Output MUST be valid JSON matching the schema.
+Binary relevance only: 1 relevant, 0 not relevant.",str
+judge_config.user_prompt,"Tasks:
+1) Write a realistic fire-scientist query_text (what someone would ask for in a search engine) describing the target phenomenon.
+2) Label each candidate image as relevant (1) or not relevant (0) to that query.
+Be consistent with the query and try to make the query as concise as possible.",str
+log_level,INFO,str
+meta_json,/tmp/FireBench/images/rights_map.json,str
+qrels_jsonl,/Volumes/data/outputs/firebench_qrels.jsonl,str
+qrels_with_score_jsonl,/Volumes/data/outputs/firebench_qrels_with_similarity_score.jsonl,str
+query_plan_candidate_image_ids_column,candidate_image_ids,str
+query_plan_core_facets,[],list
+query_plan_diversity_facets,[],list
+query_plan_jsonl,/Volumes/data/outputs/query_plan.jsonl,str
+query_plan_neg_easy,4,int
+query_plan_neg_hard,4,int
+query_plan_neg_nearmiss,4,int
+query_plan_neg_total,12,int
+query_plan_num_seeds,100,int
+query_plan_off_facets,[],list
+query_plan_random_seed,42,int
+query_plan_seed_image_ids_column,seed_image_ids,str
+seeds_jsonl,/Volumes/data/inputs/seeds.jsonl,str
+similarity_config.adapter,local_clip,str
+similarity_config.col_name,clip_score,str
+similarity_config.device,cpu,str
+similarity_config.model,apple/DFN5B-CLIP-ViT-H-14-378,str
+similarity_config.torch_dtype,None,NoneType
+similarity_config.use_safetensors,True,bool
+summary_output_dir,/Volumes/data/outputs/summary,str
+vision_config.adapter,openai,str
+vision_config.completion_window,24h,str
+vision_config.controlled_tag_vocab,"['smoke_present', 'no_smoke_visible', 'flame_visible', 'no_flame_visible', 'glow_visible', 'no_glow_visible', 'active_fire_suspected', 'no_fire_visible', 'thin_smoke', 'moderate_smoke', 'dense_smoke', 'diffuse_smoke', 'patchy_smoke', 'rising_plume', 'horizontal_smoke', 'wind_sheared_plume', 'columnar_plume', 'billowing_plume', 'low_lying_smoke', 'valley_smoke', 'ridge_smoke', 'canopy_level_smoke', 'smoke_source_visible', 'smoke_source_not_visible', 'multiple_plumes', 'single_plume', 'flame_front', 'spotting_suspected', 'torching_suspected', 'crown_fire_suspected', 'surface_fire_suspected', 'smoldering_suspected', 'forest', 'conifer_forest', 'deciduous_forest', 'mixed_forest', 'grassland', 'shrubland', 'chaparral', 'woodland', 'mountainous', 'hills', 'flat_terrain', 'canyon', 'valley', 'ridgeline', 'coastal', 'desert', 'agricultural', 'wetland', 'water_body', 'urban', 'suburban', 'wildland_urban_interface', 'road_visible', 'trail_visible', 'powerlines_visible', 'buildings_visible', 'industrial_area', 'smokestack_visible', 'vehicle_visible', 'volcano_visible', 'clear_air', 'low_contrast', 'high_contrast', 'reduced_visibility', 'good_visibility', 'backlit', 'frontlit', 'side_lit', 'sun_in_frame', 'sun_near_horizon', 'glare_present', 'lens_flare_present', 'fog_present', 'marine_layer_present', 'haze_present', 'dust_present', 'clouds_present', 'overcast', 'cloud_deck', 'cloud_shadows', 'blown_out_sky', 'steam_present', 'industrial_plume_present', 'windy_suspected', 'calm_suspected', 'precipitation_visible', 'rain_visible', 'snow_visible', 'daylight', 'dusk_twilight', 'night', 'artificial_lights_visible', 'ir_nir_imagery', 'thermal_like', 'fixed_camera', 'handheld_camera', 'aerial_view', 'long_range_view', 'telephoto_view', 'wide_angle_view', 'horizon_visible', 'sky_dominant', 'ground_dominant', 'stable_frame', 'motion_blur', 'camera_shake', 'thermal_view', 'close_up', 'mid_range', 'far_range', 'foreground_trees', 'foreground_structures', 'foreground_terrain', 'background_mountains', 'background_ocean', 'background_city', 'white_smoke', 'gray_smoke', 'dark_smoke', 'brown_smoke', 'transparent_smoke', 'opaque_smoke', 'multiple_smoke_sources', 'isolated_smoke_source', 'smoke_over_ridge', 'smoke_in_valley', 'smoke_near_horizon', 'plume_dispersing', 'plume_intensifying_suspected', 'low_resolution', 'high_resolution', 'compression_artifacts', 'sensor_noise']",list
+vision_config.image_detail,low,str
+vision_config.max_concurrent_batches,1,int
+vision_config.max_images_per_batch,900,int
+vision_config.max_output_tokens,4000,int
+vision_config.max_tags,25,int
+vision_config.min_tags,14,int
+vision_config.model,gpt-5-mini,str
+vision_config.price_per_million_cached_input_tokens,0.0125,float
+vision_config.price_per_million_image_input_tokens,0.125,float
+vision_config.price_per_million_image_output_tokens,1.0,float
+vision_config.price_per_million_input_tokens,0.125,float
+vision_config.price_per_million_output_tokens,1.0,float
+vision_config.reasoning_effort,low,str
+vision_config.stage,vision,str
+vision_config.system_prompt,"You are labeling wildfire imagery for a fire-science retrieval benchmark.
+Output MUST be valid JSON matching the schema. Do not include extra keys.
+Use the allowed taxonomy values exactly.
+Be conservative: if unsure, choose 'unknown'.
+Tagging rules:
+- Prefer tags that help retrieval and false-positive analysis (smoke vs fog/haze/cloud/glare).
+- Avoid redundant near-duplicates; pick the most specific tag.",str
+vision_config.user_prompt,"Analyze the image and output JSON with:
+- summary: <= 30 words, factual, no speculation
+- viewpoint, plume_stage, flame_visible, lighting, confounder_type, environment_type
+- tags: choose 12-18 tags ONLY from the provided enum list for the tags field
+- confidence: 0..1 per field (viewpoint, plume_stage, confounder_type, environment_type)",str

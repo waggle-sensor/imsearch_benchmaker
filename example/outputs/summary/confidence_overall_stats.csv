@@ -1,0 +1,10 @@
+Metric,Value
+Total Rows,1300
+Total Confidence Scores,7800
+Mean Confidence (Overall),0.8201
+Median Confidence (Overall),0.9000
+Std Dev (Overall),0.1482
+Min Confidence,0.0000
+Max Confidence,0.9900
+25th Percentile,0.8000
+75th Percentile,0.9000

@@ -1,0 +1,25 @@
+{
+  "total_rows": 1300,
+  "total_qrels": 1300,
+  "missing_images": 0,
+  "using_local_images": false,
+  "columns": [
+    "query_id",
+    "query_text",
+    "image_id",
+    "relevance_label",
+    "confidence",
+    "doi",
+    "license",
+    "summary",
+    "tags",
+    "flame_visible",
+    "viewpoint",
+    "plume_stage",
+    "lighting",
+    "confounder_type",
+    "environment_type",
+    "clip_score",
+    "image"
+  ]
+}

@@ -1,0 +1,5 @@
+export OPENAI_API_KEY=""
+export HF_TOKEN=""
+export IMSEARCH_BENCHMAKER_CONFIG_PATH="~/imsearch_benchmarks/FireBenchMaker/config.toml"
+export SAGE_USER=""
+export SAGE_PASSWORD=""
