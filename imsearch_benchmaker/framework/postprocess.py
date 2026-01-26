@@ -159,7 +159,7 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
     plt.tight_layout()
     plt.savefig(output_dir / "image_proportion_donuts.png", dpi=300, bbox_inches="tight")
     plt.close()
-    logger.info(f"Image proportion donuts saved to {output_dir / 'image_proportion_donuts.png'}")
+    logger.debug(f"Image proportion donuts saved to {output_dir / 'image_proportion_donuts.png'}")
 
 def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
@@ -201,8 +201,8 @@ def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, co
     plt.savefig(output_dir / "query_relevancy_distribution.png", dpi=300, bbox_inches="tight")
     plt.close()
     query_relevance.to_csv(output_dir / "query_relevancy_stats.csv", index=False)
-    logger.info(f"Query relevancy distribution saved to {output_dir / 'query_relevancy_distribution.png'}")
-    logger.info(f"Query relevancy stats saved to {output_dir / 'query_relevancy_stats.csv'}")
+    logger.debug(f"Query relevancy distribution saved to {output_dir / 'query_relevancy_distribution.png'}")
+    logger.debug(f"Query relevancy stats saved to {output_dir / 'query_relevancy_stats.csv'}")
 
 def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
@@ -234,7 +234,7 @@ def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkCon
             plt.tight_layout()
             plt.savefig(output_dir / "wordcloud_summaries.png", dpi=300, bbox_inches="tight")
             plt.close()
-            logger.info(f"Word cloud for summaries saved to {output_dir / 'wordcloud_summaries.png'}")
+            logger.debug(f"Word cloud for summaries saved to {output_dir / 'wordcloud_summaries.png'}")
 
     if config.column_tags and config.column_tags in df.columns:
         all_tags = []
@@ -263,8 +263,8 @@ def generate_wordclouds(df: pd.DataFrame, output_dir: Path, config: BenchmarkCon
             plt.close()
             top_tags = pd.DataFrame(tag_freq.most_common(50), columns=["Tag", "Count"])
             top_tags.to_csv(output_dir / "top_tags.csv", index=False)
-            logger.info(f"Word cloud for tags saved to {output_dir / 'wordcloud_tags.png'}")
-            logger.info(f"Top tags saved to {output_dir / 'top_tags.csv'}")
+            logger.debug(f"Word cloud for tags saved to {output_dir / 'wordcloud_tags.png'}")
+            logger.debug(f"Top tags saved to {output_dir / 'top_tags.csv'}")
 
 def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
@@ -297,7 +297,7 @@ def generate_relevance_overview(df: pd.DataFrame, output_dir: Path, config: Benc
     plt.tight_layout()
     plt.savefig(output_dir / "relevance_overview.png", dpi=300, bbox_inches="tight")
     plt.close()
-    logger.info(f"Relevance overview saved to {output_dir / 'relevance_overview.png'}")
+    logger.debug(f"Relevance overview saved to {output_dir / 'relevance_overview.png'}")
 
 
 def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
@@ -328,7 +328,7 @@ def generate_relevance_by_categorical(df: pd.DataFrame, output_dir: Path, config
             plt.tight_layout()
             plt.savefig(output_dir / f"relevance_by_{col}.png", dpi=300, bbox_inches="tight")
             plt.close()
-            logger.info(f"Relevance by {col} saved to {output_dir / f'relevance_by_{col}.png'}")
+            logger.debug(f"Relevance by {col} saved to {output_dir / f'relevance_by_{col}.png'}")
 
 def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
@@ -358,7 +358,7 @@ def generate_query_text_length_distribution(df: pd.DataFrame, output_dir: Path, 
     plt.tight_layout()
     plt.savefig(output_dir / "query_text_length_distribution.png", dpi=300, bbox_inches="tight")
     plt.close()
-    logger.info(f"Query text length distribution saved to {output_dir / 'query_text_length_distribution.png'}")
+    logger.debug(f"Query text length distribution saved to {output_dir / 'query_text_length_distribution.png'}")
 
 
 def generate_summary_statistics(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
@@ -390,7 +390,7 @@ def generate_summary_statistics(df: pd.DataFrame, output_dir: Path, config: Benc
 
     stats_df = pd.DataFrame(list(stats.items()), columns=["Metric", "Value"])
     stats_df.to_csv(output_dir / "dataset_summary_stats.csv", index=False)
-    logger.info(f"Dataset summary statistics saved to {output_dir / 'dataset_summary_stats.csv'}")
+    logger.debug(f"Dataset summary statistics saved to {output_dir / 'dataset_summary_stats.csv'}")
 
 
 def generate_random_image_sample(
@@ -480,7 +480,7 @@ def generate_random_image_sample(
     plt.tight_layout()
     plt.savefig(output_dir / "random_image_sample.png", dpi=150, bbox_inches="tight")
     plt.close()
-    logger.info(f"Random image sample saved to {output_dir / 'random_image_sample.png'}")
+    logger.debug(f"Random image sample saved to {output_dir / 'random_image_sample.png'}")
 
 
 def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
@@ -575,7 +575,7 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
         stats_by_relevance[config.column_relevance] = stats_by_relevance[config.column_relevance].map({0: "Not Relevant", 1: "Relevant"})
         stats_by_relevance.columns = ["Relevance Label", "Count", "Mean", "Median", "Std Dev", "Min", "Max"]
         stats_by_relevance.to_csv(output_dir / f"{col_name}_stats_by_relevance.csv", index=False)
-        logger.info(f"Similarity score statistics by relevance saved to {output_dir / f'{col_name}_stats_by_relevance.csv'}")
+        logger.debug(f"Similarity score statistics by relevance saved to {output_dir / f'{col_name}_stats_by_relevance.csv'}")
 
     overall_stats = {
         "Total Rows": len(similarity_score_df),
@@ -598,7 +598,7 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
 
     stats_df = pd.DataFrame(list(overall_stats.items()), columns=["Metric", "Value"])
     stats_df.to_csv(output_dir / f"{col_name}_overall_stats.csv", index=False)
-    logger.info(f"Similarity score overall statistics saved to {output_dir / f'{col_name}_overall_stats.csv'}")
+    logger.debug(f"Similarity score overall statistics saved to {output_dir / f'{col_name}_overall_stats.csv'}")
 
     if config.column_query_id in similarity_score_df.columns:
         query_similarity_score_stats = similarity_score_df.groupby(config.column_query_id)[col_name].agg(["mean", "std", "count"]).reset_index()
@@ -614,7 +614,7 @@ def generate_similarity_score_analysis(df: pd.DataFrame, output_dir: Path, confi
         plt.savefig(output_dir / f"{col_name}_by_query.png", dpi=300, bbox_inches="tight")
         plt.close()
         query_similarity_score_stats.to_csv(output_dir / f"{col_name}_by_query_stats.csv", index=False)
-        logger.info(f"Similarity score statistics by query saved to {output_dir / f'{col_name}_by_query_stats.csv'}")
+        logger.debug(f"Similarity score statistics by query saved to {output_dir / f'{col_name}_by_query_stats.csv'}")
 
 def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
@@ -786,7 +786,7 @@ def generate_confidence_analysis(df: pd.DataFrame, output_dir: Path, config: Ben
                 plt.tight_layout()
                 plt.savefig(output_dir / "confidence_by_category_and_relevance.png", dpi=300, bbox_inches="tight")
                 plt.close()
-    logger.info(f"Confidence analysis saved to {output_dir / 'confidence_by_category_and_relevance.png'}")
+    logger.debug(f"Confidence analysis saved to {output_dir / 'confidence_by_category_and_relevance.png'}")
 
 def generate_config_values_table(
     output_dir: Path,
@@ -798,7 +798,7 @@ def generate_config_values_table(
     """
     csv_content = config.to_csv()
     (output_dir / "config_values.csv").write_text(csv_content)
-    logger.info(f"Config values table saved to {output_dir / 'config_values.csv'}")
+    logger.debug(f"Config values table saved to {output_dir / 'config_values.csv'}")
 
 
 def generate_dataset_summary(
@@ -901,7 +901,7 @@ def generate_cost_summary(
                 )
                 if vision_summary.num_items > 0:
                     summaries.append(vision_summary)
-                    logger.info(f"Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
+                    logger.debug(f"Vision costs: ${vision_summary.total_cost:.2f} for {vision_summary.num_items} images")
         except Exception as e:
             logger.warning(f"Failed to calculate vision costs: {e}")
     
@@ -916,7 +916,7 @@ def generate_cost_summary(
                 )
                 if judge_summary.num_items > 0:
                     summaries.append(judge_summary)
-                    logger.info(f"Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
+                    logger.debug(f"Judge costs: ${judge_summary.total_cost:.2f} for {judge_summary.num_items} queries")
         except Exception as e:
             logger.warning(f"Failed to calculate judge costs: {e}")
     
@@ -927,8 +927,8 @@ def generate_cost_summary(
         
         csv_path = output_dir / "cost_summary.csv"
         write_cost_summary_csv(summaries, csv_path)
-        logger.info(f"Cost summary written to {csv_path}")
-        logger.info(f"Total cost: ${total_summary.total_cost:.2f}")
+        logger.debug(f"Cost summary written to {csv_path}")
+        logger.debug(f"Total cost: ${total_summary.total_cost:.2f}")
 
 
 def calculate_similarity_score(
