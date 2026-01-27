@@ -19,20 +19,34 @@ def parse_requirements(requirements_path: Path) -> list[str]:
 
 # Get requirements from files
 core_requirements_path = Path(__file__).parent / "imsearch_benchmaker/requirements.txt"
-openai_requirements_path = Path(__file__).parent / "imsearch_benchmaker/adapters/openai/requirements.txt"
-local_requirements_path = Path(__file__).parent / "imsearch_benchmaker/adapters/local/requirements.txt"
+adapters_dir = Path(__file__).parent / "imsearch_benchmaker/adapters"
 
 # Core dependencies
 CORE_DEPS = parse_requirements(core_requirements_path)
 
-# Optional dependencies for different adapters
-openai_deps = parse_requirements(openai_requirements_path)
-local_deps = parse_requirements(local_requirements_path)
-EXTRAS = {
-    "openai": openai_deps,
-    "local": local_deps,
-    "all": openai_deps + local_deps,
-}
+# Automatically discover adapters and their dependencies
+EXTRAS = {}
+all_adapter_deps = []
+
+if adapters_dir.exists():
+    for adapter_dir in adapters_dir.iterdir():
+        # Skip non-directories and special files
+        if not adapter_dir.is_dir() or adapter_dir.name.startswith("_") or adapter_dir.name == "__pycache__":
+            continue
+        
+        adapter_name = adapter_dir.name
+        adapter_requirements_path = adapter_dir / "requirements.txt"
+        
+        # Only add adapter if it has a requirements.txt file
+        if adapter_requirements_path.exists():
+            adapter_deps = parse_requirements(adapter_requirements_path)
+            if adapter_deps:  # Only add if there are dependencies
+                EXTRAS[adapter_name] = adapter_deps
+                all_adapter_deps.extend(adapter_deps)
+
+# Add "all" extra that includes all adapter dependencies (deduplicated)
+# Use dict.fromkeys() to preserve order while removing duplicates
+EXTRAS["all"] = list(dict.fromkeys(all_adapter_deps))
 
 # Read README for long description
 readme_file = Path(__file__).parent / "README.md"
