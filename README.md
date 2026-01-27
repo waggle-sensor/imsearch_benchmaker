@@ -101,12 +101,14 @@ Configuration is done via TOML files (JSON is also supported). The framework use
 
 - **Benchmark metadata**: Name, description, author information
 - **Column mappings**: Customize column names for your data structure
+  - **Column Names**: All fields starting with `column_` or `columns_` define dataset column names
 - **File paths**: Input and output file locations
 - **Adapter settings**: Configure vision, judge, and similarity adapters
 - **Query planning**: Control query generation parameters
 - **Hugging Face**: Repository settings for dataset upload
+- **Logging**: Control logging level
 
-See `example/config.toml` for a complete configuration example.
+See `example/config.toml` for a complete configuration example or check the [BenchmarkConfig class documentation](imsearch_benchmaker/framework/config.py#L146) for more details.
 
 ### Sensitive Fields
 
