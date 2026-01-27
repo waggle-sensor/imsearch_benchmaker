@@ -27,11 +27,7 @@ jobs:
       - name: Extract version from setup.py
         id: extract_version
         run: |
-          VERSION=$(python3 -c "import re; content = open('setup.py').read(); match = re.search(r'VERSION\s*=\s*[\"']([^\"']+)[\"']', content); print(match.group(1) if match else '')")
-          if [ -z "$VERSION" ]; then
-            echo "❌ Could not extract version from setup.py"
-            exit 1
-          fi
+          VERSION=$(python3 .github/scripts/extract_version.py)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "✅ Extracted version: $VERSION"
     
@@ -51,8 +47,7 @@ jobs:
         id: previous_version
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          # Get the version from the previous commit
-          PREV_VERSION=$(git show HEAD~1:setup.py 2>/dev/null | python3 -c "import re, sys; content = sys.stdin.read(); match = re.search(r'VERSION\s*=\s*[\"']([^\"']+)[\"']', content); print(match.group(1) if match else '')" || echo "")
+          PREV_VERSION=$(git show HEAD~1:setup.py 2>/dev/null | python3 .github/scripts/extract_version.py 2>/dev/null || echo "")
           if [ -z "$PREV_VERSION" ]; then
             echo "previous_version=" >> $GITHUB_OUTPUT
             echo "ℹ️ Could not determine previous version (first commit or setup.py didn't exist)"
