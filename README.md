@@ -401,10 +401,6 @@ Combine [imsearch_benchmarks](https://github.com/waggle-sensor/imsearch_benchmar
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
-
-[MIT License](LICENSE)
-
 ## Author
 
 - **Author**: Francisco Lozano
