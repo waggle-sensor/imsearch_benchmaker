@@ -47,7 +47,18 @@ jobs:
         id: previous_version
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          PREV_VERSION=$(git show HEAD~1:setup.py 2>/dev/null | python3 .github/scripts/extract_version.py 2>/dev/null || echo "")
+          # Get the version from the parent commit of the commit that changed setup.py
+          # If setup.py was changed in this commit, compare with HEAD~1
+          # Otherwise, find the commit that last changed setup.py
+          CURRENT_COMMIT="${{ github.sha }}"
+          PREV_COMMIT=$(git log -1 --format=%H HEAD~1 2>/dev/null || echo "")
+          
+          if [ -n "$PREV_COMMIT" ]; then
+            PREV_VERSION=$(git show "$PREV_COMMIT:setup.py" 2>/dev/null | python3 .github/scripts/extract_version.py 2>/dev/null || echo "")
+          else
+            PREV_VERSION=""
+          fi
+          
           if [ -z "$PREV_VERSION" ]; then
             echo "previous_version=" >> $GITHUB_OUTPUT
             echo "ℹ️ Could not determine previous version (first commit or setup.py didn't exist)"
@@ -63,12 +74,19 @@ jobs:
           CURRENT_VERSION="${{ steps.extract_version.outputs.version }}"
           PREV_VERSION="${{ steps.previous_version.outputs.previous_version }}"
           
-          if [ -z "$PREV_VERSION" ] || [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
+          # Since setup.py was changed (which triggered this workflow) and tag doesn't exist,
+          # create a release. The version comparison is just for informational purposes.
+          if [ -z "$PREV_VERSION" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ No previous version found, will create release for $CURRENT_VERSION"
+          elif [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "✅ Version changed from '$PREV_VERSION' to '$CURRENT_VERSION'"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ Version unchanged: $CURRENT_VERSION"
+            # Version is the same, but setup.py was changed and tag doesn't exist
+            # Create release anyway since workflow was triggered by setup.py change
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Version unchanged ($CURRENT_VERSION), but setup.py was modified - will create release"
           fi
     
       - name: Create Git Tag
