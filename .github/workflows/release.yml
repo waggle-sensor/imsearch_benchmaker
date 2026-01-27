@@ -1,0 +1,154 @@
+name: Create Release on Version Change
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'setup.py'
+
+jobs:
+  check-version-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Extract version from setup.py
+        id: extract_version
+        run: |
+          VERSION=$(python3 -c "import re; content = open('setup.py').read(); match = re.search(r'VERSION\s*=\s*[\"']([^\"']+)[\"']', content); print(match.group(1) if match else '')")
+          if [ -z "$VERSION" ]; then
+            echo "❌ Could not extract version from setup.py"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Extracted version: $VERSION"
+    
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1 || git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Tag $VERSION already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Tag $VERSION does not exist, will create release"
+          fi
+    
+      - name: Get previous version
+        id: previous_version
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          # Get the version from the previous commit
+          PREV_VERSION=$(git show HEAD~1:setup.py 2>/dev/null | python3 -c "import re, sys; content = sys.stdin.read(); match = re.search(r'VERSION\s*=\s*[\"']([^\"']+)[\"']', content); print(match.group(1) if match else '')" || echo "")
+          if [ -z "$PREV_VERSION" ]; then
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "ℹ️ Could not determine previous version (first commit or setup.py didn't exist)"
+          else
+            echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+            echo "ℹ️ Previous version: $PREV_VERSION"
+          fi
+    
+      - name: Check if version changed
+        id: version_changed
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          CURRENT_VERSION="${{ steps.extract_version.outputs.version }}"
+          PREV_VERSION="${{ steps.previous_version.outputs.previous_version }}"
+          
+          if [ -z "$PREV_VERSION" ] || [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Version changed from '$PREV_VERSION' to '$CURRENT_VERSION'"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Version unchanged: $CURRENT_VERSION"
+          fi
+    
+      - name: Create Git Tag
+        if: steps.check_tag.outputs.exists == 'false' && steps.version_changed.outputs.changed == 'true'
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+          echo "✅ Created and pushed tag: $VERSION"
+    
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false' && steps.version_changed.outputs.changed == 'true'
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          PREV_VERSION="${{ steps.previous_version.outputs.previous_version }}"
+          
+          # Create release body and JSON payload using Python
+          python3 << EOF
+          import json
+          import sys
+          
+          version = "$VERSION"
+          prev_version = "$PREV_VERSION"
+          repo = "${{ github.repository }}"
+          
+          if prev_version:
+              body = f"""## Release {version}
+
+Automated release created from version change in setup.py.
+
+### Changes
+- Version updated from {prev_version} to {version}
+
+See the [full changelog](https://github.com/{repo}/compare/{prev_version}...{version}) for details."""
+          else:
+              body = f"""## Release {version}
+
+Automated release created from version change in setup.py.
+
+### Changes
+- Version updated to {version}"""
+          
+          payload = {
+              "tag_name": version,
+              "name": f"Release {version}",
+              "body": body,
+              "draft": False,
+              "prerelease": False
+          }
+          
+          # Write JSON to file for curl
+          with open("release_payload.json", "w") as f:
+              json.dump(payload, f)
+          
+          print(f"✅ Created release payload for version {version}")
+          EOF
+          
+          # Create release using GitHub REST API
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data-binary @release_payload.json \
+            https://api.github.com/repos/${{ github.repository }}/releases)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          if [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ Created GitHub release: Release ${{ steps.extract_version.outputs.version }}"
+          else
+            echo "❌ Failed to create release. HTTP code: $HTTP_CODE"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
