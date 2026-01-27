@@ -1,6 +1,6 @@
 # Creating Custom Adapters
 
-The framework supports creating custom adapters for vision annotation, relevance judging, and similarity scoring. Adapters are automatically discovered when placed in the `imsearch_benchmaker/adapters/` directory.
+The framework supports creating custom adapters for vision annotation, relevance judging, and similarity scoring. Adapters are discovered when placed in the [imsearch_benchmaker/adapters/](.) directory and registered in the [imsearch_benchmaker/adapters/__init__.py](__init__.py) file.
 
 ## Adapter Types
 
@@ -167,6 +167,17 @@ class MyProviderSimilarity(Similarity):
         return results
 ```
 
+## Step 2.5: Create Requirements File
+
+Create a requirements file for your adapter in the `imsearch_benchmaker/adapters/myprovider/requirements.txt` file.
+
+```txt
+# imsearch_benchmaker/adapters/myprovider/requirements.txt
+myprovider-adapter
+```
+
+>NOTE: The requirements file is REQUIRED for the adapter to be discovered and pip installed correctly when running the pipeline.
+
 ## Step 3: Create Configuration Class
 
 If needed, you can create a config class that extends the base config class for the adapter:
@@ -309,6 +320,8 @@ imsearch_benchmaker/
         ├── similarity.py        # Similarity adapter
         └── requirements.txt     # Adapter-specific dependencies
 ```
+
+>NOTE: The folder name of the adapter will be used as the package name for the adapter. For example, if the adapter is in the `imsearch_benchmaker/adapters/myprovider/` directory, the package name will be `myprovider` so the pip install command will be `pip install imsearch-benchmaker[myprovider]`.
 
 ## Testing Your Adapter
 
