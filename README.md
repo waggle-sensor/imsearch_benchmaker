@@ -280,7 +280,7 @@ The framework uses an adapter pattern for extensibility. Adapters are automatica
 
 ### Creating Custom Adapters
 
-The framework supports creating custom adapters for vision annotation, relevance judging, and similarity scoring. Adapters are automatically discovered when placed in the `imsearch_benchmaker/adapters/` directory. For detailed instructions, code examples, and best practices, see [Creating Custom Adapters](imsearch_benchmaker/adapters/README.md#creating-custom-adapters).
+The framework supports creating custom adapters for vision annotation, relevance judging, and similarity scoring. Adapters are discovered when placed in the [imsearch_benchmaker/adapters/](imsearch_benchmaker/adapters/) directory and registered in the [imsearch_benchmaker/adapters/__init__.py](imsearch_benchmaker/adapters/__init__.py) file. For detailed instructions, code examples, and best practices, see [Creating Custom Adapters](imsearch_benchmaker/adapters/README.md#creating-custom-adapters).
 
 ### Mixing Adapters
 
