@@ -89,66 +89,10 @@ jobs:
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false' && steps.version_changed.outputs.changed == 'true'
         run: |
-          VERSION="${{ steps.extract_version.outputs.version }}"
-          PREV_VERSION="${{ steps.previous_version.outputs.previous_version }}"
-          
-          # Create release body and JSON payload using Python
-          python3 << EOF
-          import json
-          import sys
-          
-          version = "$VERSION"
-          prev_version = "$PREV_VERSION"
-          repo = "${{ github.repository }}"
-          
-          if prev_version:
-              body = f"""## Release {version}
-
-Automated release created from version change in setup.py.
-
-### Changes
-- Version updated from {prev_version} to {version}
-
-See the [full changelog](https://github.com/{repo}/compare/{prev_version}...{version}) for details."""
-          else:
-              body = f"""## Release {version}
-
-Automated release created from version change in setup.py.
-
-### Changes
-- Version updated to {version}"""
-          
-          payload = {
-              "tag_name": version,
-              "name": f"Release {version}",
-              "body": body,
-              "draft": False,
-              "prerelease": False
-          }
-          
-          # Write JSON to file for curl
-          with open("release_payload.json", "w") as f:
-              json.dump(payload, f)
-          
-          print(f"✅ Created release payload for version {version}")
-          EOF
-          
-          # Create release using GitHub REST API
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --data-binary @release_payload.json \
-            https://api.github.com/repos/${{ github.repository }}/releases)
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          if [ "$HTTP_CODE" -eq 201 ]; then
-            echo "✅ Created GitHub release: Release ${{ steps.extract_version.outputs.version }}"
-          else
-            echo "❌ Failed to create release. HTTP code: $HTTP_CODE"
-            echo "Response: $RESPONSE"
-            exit 1
-          fi
+          python3 .github/scripts/create_release.py
         env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
+          PREV_VERSION: ${{ steps.previous_version.outputs.previous_version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
