@@ -424,3 +424,8 @@ If you use this framework in your research, please cite:
   url = {https://github.com/waggle-sensor/imsearch_benchmaker}
 }
 ```
+
+## TODOs
+
+- [ ] Add pytest and create a testing pipeline
+- [ ] Add support for more adapters
