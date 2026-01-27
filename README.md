@@ -383,6 +383,8 @@ See the `example/` directory for:
 - Example outputs
 - Dataset card template
 
+You can also see more examples in [imsearch_benchmarks](https://github.com/waggle-sensor/imsearch_benchmarks) repository. This repository contains the benchmarks that were created using this framework to be used in [Sage Image Search](https://github.com/waggle-sensor/sage-nrp-image-search).
+
 ## Requirements
 
 - Python >= 3.11
@@ -390,6 +392,10 @@ See the `example/` directory for:
   - see `imsearch_benchmaker/requirements.txt`
 - Optional adapter dependencies:
   - see `imsearch_benchmaker/adapters/{adapter_name}/requirements.txt`
+
+## imsearch_benchmarks + imsearch_eval
+
+Combine [imsearch_benchmarks](https://github.com/waggle-sensor/imsearch_benchmarks) and [imsearch_eval](https://github.com/waggle-sensor/imsearch_eval) to create a complete pipeline for image search evaluation. imsearch_benchmarks creates the benchmarks and imsearch_eval uses them to evaluate the performance of the image search system.
 
 ## Contributing
 
