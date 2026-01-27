@@ -2,6 +2,7 @@
 
 A comprehensive framework for creating structured image search evaluation datasets. This tool automates the entire pipeline from image preprocessing to dataset upload, making it easy to build high-quality benchmarks for image retrieval systems.
 
+[![Release on Version Change](https://github.com/waggle-sensor/imsearch_benchmaker/actions/workflows/release.yml/badge.svg)](https://github.com/waggle-sensor/imsearch_benchmaker/actions/workflows/release.yml)
 ## Features
 
 - **Complete Pipeline Automation**: End-to-end workflow from raw images to published datasets
