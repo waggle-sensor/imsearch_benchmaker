@@ -345,6 +345,15 @@ Each adapter is configured independently, allowing you to choose the best servic
                     └─────────────┘
 ```
 
+### Pipeline Steps
+
+1. **Preprocess**: Converts raw images into JSONL format with metadata (image IDs, licenses, DOIs)
+2. **Vision Annotation**: Uses vision adapter to annotate images with summaries, tags, and categorical facets
+3. **Query Planning**: Selects seed images and creates candidate pools (hard/easy/nearmiss negatives) for each query that will be created by the judge adapter.
+4. **Judge Generation**: Uses judge adapter to generate queries and assign binary relevance labels for each candidate image in the query's candidate pool.
+5. **Postprocessing**: Computes similarity scores for all query-image pairs using the similarity adapter. Also, generates exploratory data analysis visualizations and statistics.
+6. **Hugging Face Upload**: Prepares the dataset in Hugging Face format for publication and uploads to the Hugging Face dataset repository.
+
 ## Output Files
 
 ### Intermediate Files
