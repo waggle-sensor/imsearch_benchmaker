@@ -116,7 +116,7 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
 
         centre_circle = plt.Circle((0, 0), 0.70, fc="white")
         ax.add_artist(centre_circle)
-        ax.text(0, 0, f"Total:\n{total_images}\nimages",
+        ax.text(0, 0, f"Total:\n{total_images}\n unique images",
                 ha="center", va="center", fontsize=11, fontweight="bold")
         ax.set_title(f"Image Proportion: {col}", fontsize=13, fontweight="bold", pad=15)
 
@@ -229,7 +229,7 @@ def generate_dataset_proportion_donuts(df: pd.DataFrame, output_dir: Path, confi
     # Add center circle for donut effect
     centre_circle = plt.Circle((0, 0), 0.70, fc="white")
     ax.add_artist(centre_circle)
-    ax.text(0, 0, f"Total:\n{total_images}\nimages",
+    ax.text(0, 0, f"Total:\n{total_images}\n unique images",
             ha="center", va="center", fontsize=11, fontweight="bold")
     ax.set_title("Dataset Proportion: Original Datasets", fontsize=14, fontweight="bold", pad=15)
     
