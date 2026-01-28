@@ -32,7 +32,7 @@ def main():
         sys.exit(1)
     
     # Create release body
-    if prev_version:
+    if prev_version and prev_version != version:
         body = f"""## Release {version}
 
 Automated release created from version change in setup.py.
@@ -41,13 +41,23 @@ Automated release created from version change in setup.py.
 - Version updated from {prev_version} to {version}
 
 See the [full changelog](https://github.com/{repo}/compare/{prev_version}...{version}) for details."""
+    elif prev_version and prev_version == version:
+        # Same version but setup.py was modified (e.g., dependency updates)
+        body = f"""## Release {version}
+
+Automated release created from version change in setup.py.
+
+### Changes
+- Setup.py updated (version remains {version})
+
+See the [full changelog](https://github.com/{repo}/compare/{prev_version}...{version}) for details."""
     else:
         body = f"""## Release {version}
 
 Automated release created from version change in setup.py.
 
 ### Changes
-- Version updated to {version}"""
+- Initial release version {version}"""
     
     # Create JSON payload
     payload = {

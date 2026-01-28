@@ -47,24 +47,18 @@ jobs:
         id: previous_version
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          # Get the version from the parent commit of the commit that changed setup.py
-          # If setup.py was changed in this commit, compare with HEAD~1
-          # Otherwise, find the commit that last changed setup.py
-          CURRENT_COMMIT="${{ github.sha }}"
-          PREV_COMMIT=$(git log -1 --format=%H HEAD~1 2>/dev/null || echo "")
+          # Get the version from the last release tag (not just the previous commit)
+          # This ensures we compare against the actual last release, not just any commit
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           
-          if [ -n "$PREV_COMMIT" ]; then
-            PREV_VERSION=$(git show "$PREV_COMMIT:setup.py" 2>/dev/null | python3 .github/scripts/extract_version.py 2>/dev/null || echo "")
-          else
-            PREV_VERSION=""
-          fi
-          
-          if [ -z "$PREV_VERSION" ]; then
-            echo "previous_version=" >> $GITHUB_OUTPUT
-            echo "ℹ️ Could not determine previous version (first commit or setup.py didn't exist)"
-          else
+          if [ -n "$LAST_TAG" ]; then
+            # Remove 'v' prefix if present
+            PREV_VERSION=$(echo "$LAST_TAG" | sed 's/^v//')
             echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
-            echo "ℹ️ Previous version: $PREV_VERSION"
+            echo "ℹ️ Previous release version: $PREV_VERSION (from tag: $LAST_TAG)"
+          else
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "ℹ️ No previous release tag found (this is the first release)"
           fi
     
       - name: Check if version changed
