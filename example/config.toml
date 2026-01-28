@@ -5,11 +5,11 @@
 log_level = "INFO"
 
 #dataset description
-benchmark_name = "FireBench"
-benchmark_description = "A benchmark for fire science image retrieval"
+benchmark_name = "Example Benchmark"
+benchmark_description = "A benchmark for example image retrieval"
 benchmark_author = "John Doe"
 benchmark_author_email = "john.doe@example.com"
-benchmark_author_affiliation = "Example University"
+benchmark_author_affiliation = "Example Organization"
 benchmark_author_orcid = "0000-0000-0000-0000"
 benchmark_author_github = "john-doe"
 
