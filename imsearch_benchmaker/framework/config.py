@@ -165,6 +165,7 @@ class BenchmarkConfig:
         column_mime_type: Column name for image MIME types.
         column_license: Column name for image licenses.
         column_doi: Column name for Digital Object Identifiers (DOIs) of the image(s).
+        column_original_dataset_name: Column name that will hold the original dataset name that the image came from.
         column_query: Column name for query text.
         column_query_id: Column name for unique query identifiers.
         column_relevance: Column name for relevance labels (boolean: 0 or 1).
@@ -225,6 +226,7 @@ class BenchmarkConfig:
     column_mime_type: str = "mime_type"
     column_license: str = "license"
     column_doi: str = "doi"
+    column_original_dataset_name: str = "original_dataset_name"
     column_query: str = "query_text"
     column_query_id: str = "query_id"
     column_relevance: str = "relevance_label"

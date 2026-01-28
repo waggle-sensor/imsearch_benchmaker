@@ -31,14 +31,16 @@ IMAGE_EXTS = {
 @dataclass(frozen=True)
 class Meta:
     """
-    Image metadata container for license and DOI information.
+    Image metadata container for license, DOI, and dataset name information.
     
     Attributes:
         license: License string for the image (e.g., "CC BY 4.0").
         doi: Digital Object Identifier or source identifier.
+        dataset_name: Name of the original dataset the image came from.
     """
     license: str
     doi: str
+    dataset_name: str
 
 
 def posix_relpath(path: Path, root: Path) -> str:
@@ -149,11 +151,12 @@ def meta_from_config(image_id: str, cfg: Dict[str, Any]) -> Meta:
         cfg: Metadata configuration dictionary with "default", "files", and "prefixes" keys.
         
     Returns:
-        Meta object with license and DOI for the image.
+        Meta object with license, DOI, and dataset name for the image.
     """
     default = cfg.get("default") or {}
     license_ = default.get("license", "")
     doi = default.get("doi", "")
+    dataset_name = default.get("dataset_name", "")
 
     files = cfg.get("files") or {}
     if image_id in files:
@@ -161,6 +164,7 @@ def meta_from_config(image_id: str, cfg: Dict[str, Any]) -> Meta:
         return Meta(
             license=str(rec.get("license", license_)),
             doi=str(rec.get("doi", doi)),
+            dataset_name=str(rec.get("dataset_name", dataset_name)),
         )
 
     prefixes = cfg.get("prefixes") or []
@@ -179,9 +183,10 @@ def meta_from_config(image_id: str, cfg: Dict[str, Any]) -> Meta:
         return Meta(
             license=str(rec.get("license", license_)),
             doi=str(rec.get("doi", doi)),
+            dataset_name=str(rec.get("dataset_name", dataset_name)),
         )
 
-    return Meta(license=str(license_), doi=str(doi))
+    return Meta(license=str(license_), doi=str(doi), dataset_name=str(dataset_name))
 
 
 def prompt_default_meta() -> Meta:
@@ -189,11 +194,12 @@ def prompt_default_meta() -> Meta:
     Prompt user for default metadata via command line input.
     
     Returns:
-        Meta object with user-provided license and DOI, or "UNKNOWN" if empty.
+        Meta object with user-provided license, DOI, and dataset name, or "UNKNOWN" if empty.
     """
     license_ = input("License (e.g., CC BY 4.0, custom, UNKNOWN): ").strip()
     doi_val = input("DOI (e.g., HPWREN, Kaggle contributor, UNKNOWN): ").strip()
-    return Meta(license=license_ or "UNKNOWN", doi=doi_val or "UNKNOWN")
+    dataset_name_val = input("Dataset name (e.g., Sage, Wildfire, UNKNOWN): ").strip()
+    return Meta(license=license_ or "UNKNOWN", doi=doi_val or "UNKNOWN", dataset_name=dataset_name_val or "UNKNOWN")
 
 
 def iter_images(root: Path, follow_symlinks: bool = False) -> Iterable[Path]:
@@ -227,23 +233,34 @@ def build_row(
     Args:
         image_path: Path to the image file.
         root: Root directory for computing relative paths.
-        meta: Metadata object containing license and DOI.
+        meta: Metadata object containing license, DOI, and dataset name.
         image_base_url: Base URL for constructing image URLs.
         config: BenchmarkConfig instance for column names.
         
     Returns:
-        Dictionary with image_id, image_url, mime_type, license, and doi columns.
+        Dictionary with image_id, image_url, mime_type, license, doi, and original_dataset_name columns.
     """
     image_id = posix_relpath(image_path, root)
     base = image_base_url.rstrip("/")
     img_id = image_id.lstrip("/")
     image_url = f"{base}/{img_id}"
+    
+    # Extract dataset name from meta, or fall back to image_id prefix
+    dataset_name = meta.dataset_name
+    if not dataset_name or dataset_name == "UNKNOWN":
+        # Extract prefix from image_id (everything before first "/")
+        if "/" in image_id:
+            dataset_name = image_id.split("/")[0]
+        else:
+            dataset_name = "UNKNOWN"
+    
     return {
         config.column_image_id: image_id,
         config.image_url_temp_column: image_url,
         config.column_mime_type: guess_mime_type(image_path),
         config.column_license: meta.license,
         config.column_doi: meta.doi,
+        config.column_original_dataset_name: dataset_name,
     }
 
 
@@ -336,12 +353,14 @@ def build_images_jsonl(
         default_meta = Meta(
             license=(default_license or "UNKNOWN"),
             doi=(default_doi or "UNKNOWN"),
+            dataset_name="UNKNOWN",
         )
     elif cfg and cfg.get("default"):
         d = cfg["default"] or {}
         default_meta = Meta(
             license=str(d.get("license", "UNKNOWN")),
             doi=str(d.get("doi", "UNKNOWN")),
+            dataset_name=str(d.get("dataset_name", "UNKNOWN")),
         )
     else:
         default_meta = prompt_default_meta()
@@ -357,9 +376,9 @@ def build_images_jsonl(
         if cfg is not None:
             meta = meta_from_config(image_id, cfg)
             if not meta.license:
-                meta = Meta(license=default_meta.license, doi=meta.doi)
+                meta = Meta(license=default_meta.license, doi=meta.doi, dataset_name=meta.dataset_name)
             if not meta.doi:
-                meta = Meta(license=meta.license, doi=default_meta.doi)
+                meta = Meta(license=meta.license, doi=default_meta.doi, dataset_name=meta.dataset_name)
         else:
             meta = default_meta
 

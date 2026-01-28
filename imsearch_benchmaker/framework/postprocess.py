@@ -161,6 +161,111 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
     plt.close()
     logger.debug(f"Image proportion donuts saved to {output_dir / 'image_proportion_donuts.png'}")
 
+def generate_dataset_proportion_donuts(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
+    """
+    Generate a donut chart showing the percentage of the benchmark dataset made up by individual datasets.
+    
+    Creates a single donut chart displaying the distribution of images across different
+    original datasets that were gathered together to create this benchmark dataset.
+    
+    Args:
+        df: DataFrame containing the dataset with original_dataset_name column.
+        output_dir: Directory to save the output PNG file.
+        config: BenchmarkConfig instance with column definitions.
+    """
+    # Check if column_original_dataset_name exists in DataFrame
+    if config.column_original_dataset_name not in df.columns:
+        # Try to extract dataset name from image_id prefix
+        if config.column_image_id not in df.columns:
+            return
+        
+        # Extract prefix from image_id (everything before first "/")
+        def extract_dataset_name(image_id: str) -> str:
+            if "/" in str(image_id):
+                return str(image_id).split("/")[0]
+            return "UNKNOWN"
+        
+        df = df.copy()
+        df[config.column_original_dataset_name] = df[config.column_image_id].apply(extract_dataset_name)
+    
+    # Group by dataset name and count unique image_ids per dataset
+    if config.column_image_id in df.columns:
+        dataset_counts = df.groupby(config.column_original_dataset_name)[config.column_image_id].nunique().sort_values(ascending=False)
+    else:
+        dataset_counts = df[config.column_original_dataset_name].value_counts().sort_values(ascending=False)
+    
+    if len(dataset_counts) == 0:
+        return
+    
+    total_images = dataset_counts.sum()
+    
+    # Create a single donut chart
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    colors = plt.cm.Set3(range(len(dataset_counts)))
+    
+    # Prepare labels
+    labels = []
+    show_labels = []
+    for dataset_name, count in dataset_counts.items():
+        pct = (count / total_images) * 100
+        if pct >= 4.0:
+            dataset_display = str(dataset_name)[:15] + "..." if len(str(dataset_name)) > 15 else str(dataset_name)
+            labels.append(f"{dataset_display}\n({count}, {pct:.1f}%)")
+            show_labels.append(True)
+        else:
+            labels.append("")
+            show_labels.append(False)
+    
+    wedges, _, _ = ax.pie(
+        dataset_counts.values,
+        labels=None,
+        autopct="",
+        startangle=90,
+        colors=colors[:len(dataset_counts)],
+        textprops={"fontsize": 8},
+    )
+    
+    # Add center circle for donut effect
+    centre_circle = plt.Circle((0, 0), 0.70, fc="white")
+    ax.add_artist(centre_circle)
+    ax.text(0, 0, f"Total:\n{total_images}\nimages",
+            ha="center", va="center", fontsize=11, fontweight="bold")
+    ax.set_title("Dataset Proportion: Original Datasets", fontsize=14, fontweight="bold", pad=15)
+    
+    # Add labels with connecting lines
+    for i, (wedge, (dataset_name, count)) in enumerate(zip(wedges, dataset_counts.items())):
+        pct = (count / total_images) * 100
+        if show_labels[i]:
+            angle = (wedge.theta2 + wedge.theta1) / 2
+            angle_rad = np.deg2rad(angle)
+            label_radius = 1.25
+            x = label_radius * np.cos(angle_rad)
+            y = label_radius * np.sin(angle_rad)
+            dataset_display = str(dataset_name)[:20] + "..." if len(str(dataset_name)) > 20 else str(dataset_name)
+            ax.text(x, y, f"{dataset_display}\n{count} ({pct:.1f}%)",
+                    ha="center", va="center", fontsize=9, fontweight="normal",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7,
+                              edgecolor="gray", linewidth=0.5))
+            donut_edge_x = 1.0 * np.cos(angle_rad)
+            donut_edge_y = 1.0 * np.sin(angle_rad)
+            ax.annotate("", xy=(x, y), xytext=(donut_edge_x, donut_edge_y),
+                        arrowprops=dict(arrowstyle="-", color="gray", lw=1.0, alpha=0.6,
+                                        connectionstyle="arc3,rad=0"))
+        elif pct >= 1.5:
+            angle = (wedge.theta2 + wedge.theta1) / 2
+            angle_rad = np.deg2rad(angle)
+            pct_radius = 0.9
+            x = pct_radius * np.cos(angle_rad)
+            y = pct_radius * np.sin(angle_rad)
+            ax.text(x, y, f"{pct:.1f}%",
+                    ha="center", va="center", fontsize=8, fontweight="normal")
+    
+    plt.tight_layout()
+    plt.savefig(output_dir / "dataset_proportion_donuts.png", dpi=300, bbox_inches="tight")
+    plt.close()
+    logger.debug(f"Dataset proportion donuts saved to {output_dir / 'dataset_proportion_donuts.png'}")
+
 def generate_query_relevancy_distribution(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
     Generate visualizations and statistics for query relevancy distribution.
@@ -841,6 +946,7 @@ def generate_dataset_summary(
     # List of generation functions with their descriptions
     generation_tasks = [
         ("Image proportion donuts", generate_image_proportion_donuts, (df, output_dir, config)),
+        ("Dataset proportion donuts", generate_dataset_proportion_donuts, (df, output_dir, config)),
         ("Query relevancy distribution", generate_query_relevancy_distribution, (df, output_dir, config)),
         ("Word clouds", generate_wordclouds, (df, output_dir, config)),
         ("Relevance overview", generate_relevance_overview, (df, output_dir, config)),

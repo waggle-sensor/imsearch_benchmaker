@@ -117,7 +117,7 @@ Fields starting with `_` (e.g., `_hf_token`, `_openai_api_key`) are considered s
 
 ### Rights Map (Metadata Configuration)
 
-The `rights_map.json` file (configured via `meta_json` in your config) allows you to assign license and DOI metadata to images during preprocessing. This is useful when images come from multiple sources with different licensing requirements.
+The `rights_map.json` file (configured via `meta_json` in your config) allows you to assign license, DOI, and dataset name metadata to images during preprocessing. This is useful when images come from multiple sources with different licensing requirements and you want to track which original dataset each image came from.
 
 #### Syntax
 
@@ -127,24 +127,28 @@ The `rights_map.json` file has the following structure:
 {
   "default": {
     "license": "UNKNOWN",
-    "doi": "UNKNOWN"
+    "doi": "UNKNOWN",
+    "dataset_name": "UNKNOWN"
   },
   "files": {
     "path/to/specific/image.jpg": {
       "license": "CC BY 4.0",
-      "doi": "10.1234/example"
+      "doi": "10.1234/example",
+      "dataset_name": "CustomDataset"
     }
   },
   "prefixes": [
     {
       "prefix": "sage/",
       "license": "UNKNOWN",
-      "doi": "10.1109/ICSENS.2016.7808975"
+      "doi": "10.1109/ICSENS.2016.7808975",
+      "dataset_name": "Sage"
     },
     {
       "prefix": "wildfire/",
       "license": "CC BY 4.0",
-      "doi": "10.3390/f14091697"
+      "doi": "10.3390/f14091697",
+      "dataset_name": "Wildfire"
     }
   ]
 }
@@ -158,12 +162,21 @@ Metadata is assigned to images using the following priority order (most specific
 2. **Longest prefix match**: If the image ID starts with any prefix in the `prefixes` array, use the metadata from the longest matching prefix
 3. **Default**: Use the metadata from the `default` object
 
+#### Dataset Name Fallback
+
+If `dataset_name` is missing or set to `"UNKNOWN"` in the rights map, the framework will automatically extract the dataset name from the image ID:
+- If the image ID contains a `/` separator (e.g., `sage/imagesampler-bottom-2726/image.jpg`), it extracts the prefix before the first `/` (e.g., `sage`)
+- If the image ID has no `/` separator, it uses `"UNKNOWN"` as the dataset name
+
+This allows you to track which original datasets contributed to your benchmark, which is useful for generating dataset proportion visualizations.
+
 #### Example
 
 For an image with ID `sage/imagesampler-bottom-2726/image.jpg`:
-- If `files` contains an exact match, use that
-- Otherwise, if it starts with `sage/`, use the `sage/` prefix metadata
+- If `files` contains an exact match, use that metadata (including `dataset_name`)
+- Otherwise, if it starts with `sage/`, use the `sage/` prefix metadata (including `dataset_name: "Sage"`)
 - Otherwise, use the `default` metadata
+- If `dataset_name` is still `"UNKNOWN"` or missing, extract `"sage"` from the image ID prefix
 
 #### Configuration
 
@@ -179,7 +192,9 @@ Or pass it via command line:
 benchmaker preprocess --meta-json path/to/rights_map.json
 ```
 
-If no `meta_json` is provided, you'll be prompted for default license and DOI values during preprocessing.
+If no `meta_json` is provided, you'll be prompted for default license, DOI, and dataset name values during preprocessing.
+
+The dataset name is stored in the `original_dataset_name` column (configurable via `column_original_dataset_name` in your config) and is used to generate dataset proportion visualizations in the summary output.
 
 See `example/rights_map.json` for a complete example.
 
@@ -370,7 +385,13 @@ Each adapter is configured independently, allowing you to choose the best servic
 - `qrels_with_score_jsonl`: QRELs with similarity scores
 - `summary/`: Directory containing:
   - Dataset statistics (CSV)
-  - Visualizations (PNG)
+  - Visualizations (PNG):
+    - Dataset proportion donut chart (showing percentage breakdown by original dataset)
+    - Image proportion donuts (for taxonomy columns)
+    - Query relevancy distributions
+    - Relevance overview charts
+    - Similarity score analysis
+    - Confidence analysis
   - Cost summaries
   - Word clouds
 - `hf_dataset/`: Hugging Face dataset ready for upload
