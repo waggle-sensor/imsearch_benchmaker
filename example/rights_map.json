@@ -1,23 +1,27 @@
 {
     "default": {
       "license": "UNKNOWN",
-      "doi": "UNKNOWN"
+      "doi": "UNKNOWN",
+      "dataset_name": "UNKNOWN"
     },
     "prefixes": [
       {
         "prefix": "sage/",
         "license": "UNKNOWN",
-        "doi": "10.1109/ICSENS.2016.7808975"
+        "doi": "10.1109/ICSENS.2016.7808975",
+        "dataset_name": "Sage"
       },
       {
         "prefix": "wildfire/",
         "license": "CC BY 4.0",
-        "doi": "10.3390/f14091697"
+        "doi": "10.3390/f14091697",
+        "dataset_name": "Wildfire"
       },
       {
         "prefix": "figlib/",
         "license": "CC BY 4.0",
-        "doi": "2112.08598"
+        "doi": "2112.08598",
+        "dataset_name": "FigLib"
       }
     ]
 }
