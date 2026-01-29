@@ -124,23 +124,27 @@ def submit_batch_shards(
     all_refs: List[BatchRefs] = []
     in_flight: List[BatchRefs] = []
 
-    for shard_path in shard_paths:
-        while len(in_flight) >= max_concurrent:
-            completed = []
-            for ref in in_flight:
-                try:
-                    b = client.batches.retrieve(ref.batch_id)
-                    if b.status in ("completed", "failed", "expired", "canceled"):
-                        completed.append(ref)
-                except Exception:
-                    pass
-            in_flight = [ref for ref in in_flight if ref not in completed]
-            if len(in_flight) >= max_concurrent:
-                time.sleep(60)
+    with tqdm(total=len(shard_paths), desc="Submitting batch shards", unit="shard") as pbar:
+        for shard_path in shard_paths:
+            while len(in_flight) >= max_concurrent:
+                completed = []
+                for ref in in_flight:
+                    try:
+                        b = client.batches.retrieve(ref.batch_id)
+                        if b.status in ("completed", "failed", "expired", "canceled"):
+                            completed.append(ref)
+                    except Exception:
+                        pass
+                in_flight = [ref for ref in in_flight if ref not in completed]
+                if len(in_flight) >= max_concurrent:
+                    pbar.set_postfix({"in_flight": len(in_flight), "waiting": "..."})
+                    time.sleep(60)
 
-        refs = submit_batch(client, shard_path, completion_window, metadata)
-        all_refs.append(refs)
-        in_flight.append(refs)
+            refs = submit_batch(client, shard_path, completion_window, metadata)
+            all_refs.append(refs)
+            in_flight.append(refs)
+            pbar.update(1)
+            pbar.set_postfix({"submitted": len(all_refs), "in_flight": len(in_flight)})
 
     return all_refs
 
