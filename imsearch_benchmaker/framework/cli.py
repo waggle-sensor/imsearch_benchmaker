@@ -77,6 +77,9 @@ def run_preprocess(
     Returns:
         List of image rows written to images.jsonl.
     """
+    print("=" * 80)
+    print("Starting preprocess pipeline")
+    print("=" * 80)
     config = config or DEFAULT_BENCHMARK_CONFIG
     
     # Get paths from config if not provided
@@ -91,8 +94,14 @@ def run_preprocess(
         raise ValueError("out_images_jsonl must be provided or set in config.images_jsonl")
     
     # Remove macOS metadata files (.DS_Store and ._* files)
+    print("\n" + "=" * 80)
+    print("Step a: Removing macOS metadata files (.DS_Store and ._* files)")
+    print("=" * 80)
     remove_macos_metadata_files(input_dir)
     
+    print("\n" + "=" * 80)
+    print("Step b: Building images.jsonl")
+    print("=" * 80)
     rows = build_images_jsonl(
         input_dir=input_dir,
         out_jsonl=out_images_jsonl,
@@ -105,6 +114,9 @@ def run_preprocess(
     )
     
     if out_seeds_jsonl:
+        print("\n" + "=" * 80)
+        print("Step c: Building seeds.jsonl")
+        print("=" * 80)
         num_seeds = num_seeds or config.query_plan_num_seeds
         build_seeds_jsonl(
             rows=rows,
@@ -112,7 +124,11 @@ def run_preprocess(
             num_seeds=num_seeds,
             seed_prefix="query_",
         )
-    
+
+    print("\n" + "=" * 80)
+    print("Preprocess pipeline complete!")
+    print("=" * 80)
+
     return rows
 
 def run_vision(
