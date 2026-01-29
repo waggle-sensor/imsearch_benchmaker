@@ -414,9 +414,9 @@ You can also see more examples in [imsearch_benchmarks](https://github.com/waggl
 - Optional adapter dependencies:
   - see `imsearch_benchmaker/adapters/{adapter_name}/requirements.txt`
 
-## imsearch_benchmarks + imsearch_eval
+## imsearch_benchmaker + imsearch_eval
 
-Combine [imsearch_benchmarks](https://github.com/waggle-sensor/imsearch_benchmarks) and [imsearch_eval](https://github.com/waggle-sensor/imsearch_eval) to create a complete pipeline for image search evaluation. imsearch_benchmarks creates the benchmarks and imsearch_eval uses them to evaluate the performance of the image search system.
+Combine [imsearch_benchmaker](https://github.com/waggle-sensor/imsearch_benchmaker) and [imsearch_eval](https://github.com/waggle-sensor/imsearch_eval) to create a complete pipeline for image search evaluation. imsearch_benchmaker creates the benchmarks and imsearch_eval uses them to evaluate the performance of the image search system.
 
 ## Contributing
 
