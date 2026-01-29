@@ -17,6 +17,7 @@ import requests
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from tqdm import tqdm
 
 from .io import read_jsonl, write_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
@@ -82,29 +83,35 @@ def remove_macos_metadata_files(root: Path) -> int:
     Returns:
         Number of metadata files removed.
     """
+    logging.info("Removing macOS metadata files (.DS_Store and ._* files)...")
     removed_count = 0
     
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        
-        # Remove .DS_Store files
-        if path.name == ".DS_Store":
-            try:
-                path.unlink()
-                removed_count += 1
-                logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
-            except OSError as e:
-                logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
-        
-        # Remove files starting with ._
-        elif path.name.startswith("._"):
-            try:
-                path.unlink()
-                removed_count += 1
-                logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
-            except OSError as e:
-                logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
+    # Collect all files first to get accurate progress
+    all_files = [p for p in root.rglob("*") if p.is_file()]
+    
+    with tqdm(total=len(all_files), desc="Scanning for metadata files", unit="file") as pbar:
+        for path in all_files:
+            pbar.update(1)
+            
+            # Remove .DS_Store files
+            if path.name == ".DS_Store":
+                try:
+                    path.unlink()
+                    removed_count += 1
+                    logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
+                    pbar.set_postfix({"removed": removed_count})
+                except OSError as e:
+                    logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
+            
+            # Remove files starting with ._
+            elif path.name.startswith("._"):
+                try:
+                    path.unlink()
+                    removed_count += 1
+                    logger.debug(f"[PREPROCESS] Removed macOS metadata file: {path}")
+                    pbar.set_postfix({"removed": removed_count})
+                except OSError as e:
+                    logger.warning(f"[PREPROCESS] Failed to remove {path}: {e}")
     
     if removed_count > 0:
         logger.info(f"[PREPROCESS] Removed {removed_count} macOS metadata file(s) from {root}")
