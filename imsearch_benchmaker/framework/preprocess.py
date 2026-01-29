@@ -298,16 +298,20 @@ def write_seeds_jsonl(
     step = len(image_ids_sorted) / num_seeds
 
     seeds = []
-    for i in range(num_seeds):
-        idx = int(i * step)
-        seeds.append({
-            config.column_query_id: f"{seed_prefix}{i+1:03d}",
-            config.query_plan_seed_image_ids_column: [image_ids_sorted[idx]],
-        })
+    with tqdm(total=num_seeds, desc="Creating seed images", unit="seed") as pbar:
+        for i in range(num_seeds):
+            idx = int(i * step)
+            seeds.append({
+                config.column_query_id: f"{seed_prefix}{i+1:03d}",
+                config.query_plan_seed_image_ids_column: [image_ids_sorted[idx]],
+            })
+            pbar.update(1)
 
     with out_path.open("w", encoding="utf-8") as f:
-        for seed in seeds:
-            f.write(json.dumps(seed, ensure_ascii=False) + "\n")
+        with tqdm(total=len(seeds), desc="Writing seeds.jsonl", unit="seed") as pbar:
+            for seed in seeds:
+                f.write(json.dumps(seed, ensure_ascii=False) + "\n")
+                pbar.update(1)
 
 
 def build_images_jsonl(
