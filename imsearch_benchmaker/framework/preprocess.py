@@ -347,6 +347,7 @@ def build_images_jsonl(
     Raises:
         ValueError: If image_base_url is not provided and not in config.
     """
+    logger.info(f"[PREPROCESS] Building images.jsonl from {input_dir}...")
     config = config or DEFAULT_BENCHMARK_CONFIG
     image_base_url = image_base_url or config.image_base_url
     if not image_base_url:
@@ -374,27 +375,38 @@ def build_images_jsonl(
 
     rows: List[Dict[str, Any]] = []
     n = 0
-    for img_path in iter_images(input_dir, follow_symlinks=follow_symlinks):
-        image_id = posix_relpath(img_path, input_dir)
+    
+    # Collect all image paths first for accurate progress tracking
+    all_images = list(iter_images(input_dir, follow_symlinks=follow_symlinks))
+    total_images = len(all_images) if not limit else min(len(all_images), limit)
+    
+    with tqdm(total=total_images, desc="Building images.jsonl", unit="image") as pbar:
+        for img_path in all_images:
+            image_id = posix_relpath(img_path, input_dir)
 
-        if skip_percent_paths and "%" in image_id:
-            continue
+            if skip_percent_paths and "%" in image_id:
+                pbar.update(1)
+                continue
 
-        if cfg is not None:
-            meta = meta_from_config(image_id, cfg)
-            if not meta.license:
-                meta = Meta(license=default_meta.license, doi=meta.doi, dataset_name=meta.dataset_name)
-            if not meta.doi:
-                meta = Meta(license=meta.license, doi=default_meta.doi, dataset_name=meta.dataset_name)
-        else:
-            meta = default_meta
+            if cfg is not None:
+                meta = meta_from_config(image_id, cfg)
+                if not meta.license:
+                    meta = Meta(license=default_meta.license, doi=meta.doi, dataset_name=meta.dataset_name)
+                if not meta.doi:
+                    meta = Meta(license=meta.license, doi=default_meta.doi, dataset_name=meta.dataset_name)
+            else:
+                meta = default_meta
 
-        rows.append(build_row(img_path, input_dir, meta, image_base_url=image_base_url, config=config))
-        n += 1
-        if limit and n >= limit:
-            break
+            rows.append(build_row(img_path, input_dir, meta, image_base_url=image_base_url, config=config))
+            n += 1
+            pbar.update(1)
+            pbar.set_postfix({"processed": n, "skipped": pbar.n - n})
+            
+            if limit and n >= limit:
+                break
 
     write_jsonl(out_jsonl, rows)
+    logger.info(f"[PREPROCESS] Wrote {len(rows)} image(s) to {out_jsonl}")
     return rows
 
 
@@ -421,6 +433,7 @@ def build_seeds_jsonl(
     Raises:
         RuntimeError: If there are fewer images than requested seeds.
     """
+    logger.info(f"[PREPROCESS] Building seeds.jsonl from {len(rows)} rows...")
     config = config or DEFAULT_BENCHMARK_CONFIG
     image_ids = [row[config.column_image_id] for row in rows]
     write_seeds_jsonl(
