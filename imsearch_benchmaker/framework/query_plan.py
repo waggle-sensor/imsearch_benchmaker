@@ -417,19 +417,9 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
                 config.query_plan_candidate_image_ids_column: candidate_ids,
             })
 
-        # Log summary of failed and succeeded seeds
-        if failed_seeds:
-            logger.warning(f"[QUERY_PLAN] Summary: {len(failed_seeds)} seed(s) failed (missing annotations)")
-            # Group by query_id for better logging
-            failed_by_query = defaultdict(list)
-            for query_id, seed_id in failed_seeds:
-                failed_by_query[query_id].append(seed_id)
-            for query_id, seed_ids in failed_by_query.items():
-                logger.warning(f"[QUERY_PLAN]   Query {query_id}: {len(seed_ids)} failed seed(s): {', '.join(seed_ids[:5])}{'...' if len(seed_ids) > 5 else ''}")
-        
-        if succeeded_seeds:
-            logger.info(f"[QUERY_PLAN] Summary: {len(succeeded_seeds)} seed(s) succeeded")
-        
+        # Log summary of failed and succeeded seeds        
+        logger.info(f"[QUERY_PLAN] Failed seeds: {failed_seeds}")
+        logger.info(f"[QUERY_PLAN] Succeeded seeds: {succeeded_seeds}")
         logger.info(f"[QUERY_PLAN] Built {len(rows_out)} query plan(s) from {total_queries} seed query(s)")
 
         return rows_out
