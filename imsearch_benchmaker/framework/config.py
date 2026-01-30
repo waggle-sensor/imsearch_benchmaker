@@ -68,7 +68,6 @@ class VisionConfig:
         reasoning_effort: Reasoning effort level (e.g., "low", "medium", "high") for models that support it.
         image_detail: Image detail level for processing (e.g., "low", "high").
         max_images_per_batch: Maximum number of images to include in a single batch submission.
-        max_concurrent_batches: Maximum number of batches to submit concurrently.
         stage: Stage identifier for batch metadata (default: "vision").
         controlled_tag_vocab: Controlled vocabulary list for tagging by the vision model.
         min_tags: Minimum number of tags the vision model will include in the tagging.
@@ -83,7 +82,6 @@ class VisionConfig:
     reasoning_effort: Optional[str] = None
     image_detail: Optional[str] = None
     max_images_per_batch: Optional[int] = None
-    max_concurrent_batches: Optional[int] = None
     stage: Optional[str] = "vision"
     controlled_tag_vocab: List[str] = field(default_factory=list)
     min_tags: int = 14
@@ -107,7 +105,6 @@ class JudgeConfig:
         reasoning_effort: Reasoning effort level (e.g., "low", "medium", "high") for models that support it.
         max_queries_per_batch: Maximum number of queries to include in a single batch submission.
         max_candidates: Maximum number of candidate images to include per query in judge requests.
-        max_concurrent_batches: Maximum number of batches to submit concurrently.
         stage: Stage identifier for batch metadata (default: "judge").
     """
     
@@ -119,7 +116,6 @@ class JudgeConfig:
     reasoning_effort: Optional[str] = None
     max_queries_per_batch: Optional[int] = None
     max_candidates: Optional[int] = None
-    max_concurrent_batches: Optional[int] = None
     stage: Optional[str] = "judge"
 
 

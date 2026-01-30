@@ -241,17 +241,12 @@ class OpenAIVision(Vision):
         metadata: Optional[Dict[str, str]] = None,
         max_items_per_shard: Optional[int] = None,
         shard_prefix: str = "vision_shard",
-        max_concurrent: int = 1,
     ) -> object:
         if completion_window is None:
             if isinstance(self.config.vision_config, OpenAIVisionConfig):
                 completion_window = self.config.vision_config.completion_window
         if max_items_per_shard is None:
             max_items_per_shard = self.config.vision_config.max_images_per_batch
-        if max_concurrent == 1:
-            config_max_concurrent = self.config.vision_config.max_concurrent_batches
-            if config_max_concurrent:
-                max_concurrent = config_max_concurrent
         batch_lines = list(self.build_batch_lines(images))
         if out_jsonl is None:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl") as tmp:
@@ -273,7 +268,6 @@ class OpenAIVision(Vision):
                 shard_paths,
                 completion_window=completion_window,
                 metadata=metadata,
-                max_concurrent=max_concurrent,
             )
 
         return submit_batch(

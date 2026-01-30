@@ -158,18 +158,11 @@ class OpenAIJudge(Judge):
         metadata: Optional[Dict[str, str]] = None,
         max_items_per_shard: Optional[int] = None,
         shard_prefix: str = "judge_shard",
-        max_concurrent: int = None,
     ) -> object:
         if completion_window is None:
             completion_window = self.config.judge_config.completion_window
         if max_items_per_shard is None:
             max_items_per_shard = self.config.judge_config.max_queries_per_batch
-        if max_concurrent is None:
-            config_max_concurrent = self.config.judge_config.max_concurrent_batches
-            if config_max_concurrent:
-                max_concurrent = config_max_concurrent
-        if max_concurrent is None:
-            max_concurrent = 1
         batch_lines = list(self.build_batch_lines(queries))
         if out_jsonl is None:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl") as tmp:
@@ -191,7 +184,6 @@ class OpenAIJudge(Judge):
                 shard_paths,
                 completion_window=completion_window,
                 metadata=metadata,
-                max_concurrent=max_concurrent,
             )
 
         return submit_batch(

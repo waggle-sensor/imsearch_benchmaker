@@ -103,48 +103,29 @@ def submit_batch_shards(
     shard_paths: List[Path],
     completion_window: Optional[str],
     metadata: Optional[Dict[str, str]] = None,
-    max_concurrent: int = 1,
 ) -> List[BatchRefs]:
     """
-    Submit multiple batch shards with concurrency control.
+    Submit multiple batch shards.
     
-    Submits multiple batch shards while respecting the max_concurrent limit.
-    Monitors in-flight batches and waits for completion before submitting new ones.
+    Submits all batch shards at once. Use wait_for_batches() separately to wait for completion.
     
     Args:
         client: OpenAI client instance.
         shard_paths: List of paths to shard JSONL files to submit.
         completion_window: Completion window for batches (e.g., "24h").
         metadata: Optional metadata dictionary to attach to batches.
-        max_concurrent: Maximum number of batches to submit concurrently.
         
     Returns:
         List of BatchRefs objects for all submitted batches.
     """
     all_refs: List[BatchRefs] = []
-    in_flight: List[BatchRefs] = []
 
     with tqdm(total=len(shard_paths), desc="Submitting batch shards", unit="shard") as pbar:
         for shard_path in shard_paths:
-            while len(in_flight) >= max_concurrent:
-                completed = []
-                for ref in in_flight:
-                    try:
-                        b = client.batches.retrieve(ref.batch_id)
-                        if b.status in ("completed", "failed", "expired", "canceled"):
-                            completed.append(ref)
-                    except Exception:
-                        pass
-                in_flight = [ref for ref in in_flight if ref not in completed]
-                if len(in_flight) >= max_concurrent:
-                    pbar.set_postfix({"in_flight": len(in_flight), "waiting": "..."})
-                    time.sleep(60)
-
             refs = submit_batch(client, shard_path, completion_window, metadata)
             all_refs.append(refs)
-            in_flight.append(refs)
             pbar.update(1)
-            pbar.set_postfix({"submitted": len(all_refs), "in_flight": len(in_flight)})
+            pbar.set_postfix({"submitted": len(all_refs)})
 
     return all_refs
 
