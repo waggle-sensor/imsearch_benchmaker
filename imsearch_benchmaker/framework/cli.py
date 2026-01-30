@@ -1547,7 +1547,15 @@ def run_vision_retry(
         
         batch_id_str = format_batch_id(batch_ref)
         batch_id_file = out_batch_jsonl.parent / ".vision_retry_batch_id"
-        save_batch_id(batch_id_str, batch_id_file)
+        
+        # Append batch ID to file if it exists, otherwise create new
+        if batch_id_file.exists():
+            existing_ids = load_batch_id(batch_id_file)
+            combined_ids = f"{existing_ids},{batch_id_str}" if existing_ids else batch_id_str
+            save_batch_id(combined_ids, batch_id_file)
+        else:
+            save_batch_id(batch_id_str, batch_id_file)
+        
         logger.info(f"[VISION] Submitted vision retry batch: {batch_id_str}")
     
     return out_batch_jsonl
@@ -1691,7 +1699,15 @@ def run_judge_retry(
         
         batch_id_str = format_batch_id(batch_ref)
         batch_id_file = out_batch_jsonl.parent / ".judge_retry_batch_id"
-        save_batch_id(batch_id_str, batch_id_file)
+        
+        # Append batch ID to file if it exists, otherwise create new
+        if batch_id_file.exists():
+            existing_ids = load_batch_id(batch_id_file)
+            combined_ids = f"{existing_ids},{batch_id_str}" if existing_ids else batch_id_str
+            save_batch_id(combined_ids, batch_id_file)
+        else:
+            save_batch_id(batch_id_str, batch_id_file)
+        
         logger.info(f"[JUDGE] Submitted judge retry batch: {batch_id_str}")
     
     return out_batch_jsonl
