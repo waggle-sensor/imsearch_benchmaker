@@ -235,7 +235,13 @@ class OpenAIJudge(Judge):
                 temp_output = output_path.parent / f"temp_output_{ref.batch_id}.jsonl"
                 download_file(self.client, b.output_file_id, temp_output)
                 for row in read_jsonl(temp_output):
-                    all_output_rows.append(row)
+                    # Check if response has status "incomplete" - treat as error
+                    response = row.get("response", {})
+                    body = response.get("body", {}) if isinstance(response, dict) else {}
+                    if isinstance(body, dict) and body.get("status") == "incomplete":
+                        all_error_rows.append(row)
+                    else:
+                        all_output_rows.append(row)
                 temp_output.unlink()
             if b.error_file_id and error_path:
                 temp_error = error_path.parent / f"temp_error_{ref.batch_id}.jsonl"
