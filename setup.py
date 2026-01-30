@@ -8,7 +8,7 @@ optional adapters for different services (OpenAI, local CLIP, etc.).
 from pathlib import Path
 from setuptools import setup, find_packages
 
-VERSION = "0.1.6" 
+VERSION = "0.1.7" 
 
 def parse_requirements(requirements_path: Path) -> list[str]:
     """Helper function to parse requirements file, filtering out empty lines and comments."""

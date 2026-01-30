@@ -5,12 +5,15 @@ Framework utilities for building query plans from annotations + seeds.
 """
 from __future__ import annotations
 import random
+import logging
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from .io import read_jsonl, write_jsonl
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from .query_plan_types import ImageRec, QueryPlanStrategy
+
+logger = logging.getLogger(__name__)
 
 def jaccard(a: Set[str], b: Set[str]) -> float:
     """
@@ -300,14 +303,39 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
                 idx_core[idx_key].append(rec)
 
         rows_out: List[Dict[str, Any]] = []
+        failed_seeds: List[Tuple[str, str]] = []  # (query_id, seed_id)
+        succeeded_seeds: List[Tuple[str, str]] = []  # (query_id, seed_id)
+        total_queries = 0
+        
         for q in read_jsonl(seeds_path):
+            total_queries += 1
             query_id = q[config.column_query_id]
             seed_ids: List[str] = list(q[config.query_plan_seed_image_ids_column])
-            seed_recs = [annotations[sid] for sid in seed_ids]
+            
+            # Filter out seed IDs that don't have annotations (failed annotations)
+            valid_seed_ids = []
+            for sid in seed_ids:
+                if sid in annotations:
+                    valid_seed_ids.append(sid)
+                    succeeded_seeds.append((query_id, sid))
+                else:
+                    failed_seeds.append((query_id, sid))
+                    logger.warning(f"[QUERY_PLAN] Skipping seed {sid} for query {query_id}: annotation not found (likely failed during vision phase)")
+            
+            # Skip this query if all seeds failed
+            if not valid_seed_ids:
+                logger.error(f"[QUERY_PLAN] Skipping query {query_id}: all {len(seed_ids)} seed(s) failed annotation")
+                continue
+            
+            # If some seeds failed but we have at least one valid seed, continue with valid ones
+            if len(valid_seed_ids) < len(seed_ids):
+                logger.warning(f"[QUERY_PLAN] Query {query_id}: {len(valid_seed_ids)}/{len(seed_ids)} seed(s) available, proceeding with available seeds")
+            
+            seed_recs = [annotations[sid] for sid in valid_seed_ids]
 
             prof = derive_query_profile(seed_recs, core_keys)
             seed_tags: Set[str] = prof["seed_tags"]
-            already: Set[str] = set(seed_ids)
+            already: Set[str] = set(valid_seed_ids)
 
             core_bucket = []
             if core_keys:
@@ -382,12 +410,27 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
                 rng.shuffle(fallback)
                 negatives.extend(fallback[:missing])
 
-            candidate_ids = list(seed_ids) + negatives
+            candidate_ids = list(valid_seed_ids) + negatives
             rows_out.append({
                 config.column_query_id: query_id,
-                config.query_plan_seed_image_ids_column: seed_ids,
+                config.query_plan_seed_image_ids_column: valid_seed_ids,
                 config.query_plan_candidate_image_ids_column: candidate_ids,
             })
+
+        # Log summary of failed and succeeded seeds
+        if failed_seeds:
+            logger.warning(f"[QUERY_PLAN] Summary: {len(failed_seeds)} seed(s) failed (missing annotations)")
+            # Group by query_id for better logging
+            failed_by_query = defaultdict(list)
+            for query_id, seed_id in failed_seeds:
+                failed_by_query[query_id].append(seed_id)
+            for query_id, seed_ids in failed_by_query.items():
+                logger.warning(f"[QUERY_PLAN]   Query {query_id}: {len(seed_ids)} failed seed(s): {', '.join(seed_ids[:5])}{'...' if len(seed_ids) > 5 else ''}")
+        
+        if succeeded_seeds:
+            logger.info(f"[QUERY_PLAN] Summary: {len(succeeded_seeds)} seed(s) succeeded")
+        
+        logger.info(f"[QUERY_PLAN] Built {len(rows_out)} query plan(s) from {total_queries} seed query(s)")
 
         return rows_out
 
