@@ -1811,8 +1811,6 @@ def run_cost_summary(
         
         csv_path = output_dir / "cost_summary.csv"
         write_cost_summary_csv(summaries, csv_path)
-        logger.info(f"[COST] Cost summary written to {csv_path}")
-        logger.info(f"[COST] Total cost: ${total_summary.total_cost:.2f}")
     else:
         logger.warning("[COST] No cost summaries to write (no batch output files found or all had 0 items)")
 
