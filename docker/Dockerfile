@@ -21,6 +21,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install PyTorch with CUDA support first (before other requirements)
+# This ensures CUDA-enabled PyTorch is installed
+# disable if you are not using a GPU
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
