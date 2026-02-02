@@ -1,2 +1,2 @@
-imsearch_benchmaker @ git+https://github.com/waggle-sensor/imsearch_benchmaker
+imsearch_benchmaker[all] @ git+https://github.com/waggle-sensor/imsearch_benchmaker
 
