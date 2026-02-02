@@ -1,6 +1,6 @@
 # Docker Setup for imsearch_benchmarks
 
-This directory contains the required files to build and work in a dockerized environment for the `imsearch_benchmarks` service.
+This directory contains the required files to build and work in a dockerized environment with GPU support for the `imsearch_benchmarks` service.
 
 ## Contents
 
@@ -42,8 +42,6 @@ You may set the following environment variables (either in a `.env` file or dire
 
 The container is configured to use NVIDIA GPUs via the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/overview.html).
 - Ensure you have the NVIDIA drivers and the toolkit installed on your host machine.
-
->NOTE: If you are not using GPUs, you can remove the NVIDIA Container Toolkit from the docker-compose.yml file and the environment variables from the docker-compose.yml file. Also, you can remove the PyTorch installation from the Dockerfile.
 
 ### 5. Enter the Container
 
