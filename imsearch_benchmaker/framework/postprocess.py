@@ -1215,6 +1215,38 @@ def _upload_dataset_card(
         logger.warning(f"Dataset card path provided but file does not exist: {dataset_card_path}")
 
 
+def _upload_annotations_jsonl(
+    annotations_jsonl_path: Path,
+    repo_id: str,
+    client: HfApi,
+) -> None:
+    """
+    Upload annotations.jsonl to a Hugging Face repository.
+    
+    Args:
+        annotations_jsonl_path: Path to the annotations.jsonl file.
+        repo_id: Hugging Face repository ID.
+        client: HfApi instance for uploading files.
+        
+    Note:
+        If the file doesn't exist or upload fails, a warning is logged but no exception is raised.
+    """
+    if annotations_jsonl_path.exists():
+        try:
+            logger.info(f"Uploading annotations.jsonl from: {annotations_jsonl_path}")
+            client.upload_file(
+                path_or_fileobj=str(annotations_jsonl_path),
+                path_in_repo="annotations.jsonl",
+                repo_id=repo_id,
+                repo_type="dataset"
+            )
+            logger.info(f"annotations.jsonl successfully uploaded")
+        except Exception as e:
+            logger.warning(f"Failed to upload annotations.jsonl: {e}")
+    else:
+        logger.warning(f"annotations.jsonl path provided but file does not exist: {annotations_jsonl_path}")
+
+
 def _build_image_url_map(images_jsonl_path: Path, config: BenchmarkConfig) -> Dict[str, str]:
     """
     Build a mapping from image IDs to image URLs from images.jsonl.
@@ -1375,6 +1407,7 @@ def huggingface(
     After the main dataset is uploaded, optionally uploads:
     - Dataset card (README.md) from config.hf_dataset_card_path if provided
     - Summary folder contents from config.summary_output_dir if it exists
+    - annotations.jsonl from config.annotations_jsonl if it exists
     
     Args:
         qrels_path: Path to the qrels.jsonl file. If None, uses config.qrels_with_score_jsonl or config.qrels_jsonl.
@@ -1391,8 +1424,8 @@ def huggingface(
         If True, image_root_dir must be provided. If False or None, images_jsonl_path must be provided
         to get image URLs.
         
-        Dataset card and summary folder are uploaded after the main dataset upload completes.
-        Both are optional - if not provided or if upload fails, the operation continues without error.
+        Dataset card, summary folder, and annotations.jsonl are uploaded after the main dataset upload completes.
+        All are optional - if not provided or if upload fails, the operation continues without error.
     """
     config = config or DEFAULT_BENCHMARK_CONFIG
     
@@ -1490,6 +1523,13 @@ def huggingface(
     if config.summary_output_dir:
         _upload_summary_folder(
             summary_dir=Path(config.summary_output_dir),
+            repo_id=repo_id,
+            client=client,
+        )
+    
+    if config.annotations_jsonl:
+        _upload_annotations_jsonl(
+            annotations_jsonl_path=Path(config.annotations_jsonl),
             repo_id=repo_id,
             client=client,
         )
