@@ -34,14 +34,9 @@ You can place configs, and input files into these folders as needed.
 
 You may set the following environment variables (either in a `.env` file or directly when running):
 
-- `SAGE_USER`
-- `SAGE_PASSWORD`
-- `SAGE_URBAN_IMAGERY` (set to `true` or `false`)
-- `OPENAI_API_KEY`
-- `HF_TOKEN`
+- `IMSEARCH_BENCHMAKER_CONFIG_PATH` (path to the config file, e.g. `~/imsearch_benchmarks/FireBenchMaker/config.toml`)
 - `NVIDIA_VISIBLE_DEVICES` (default: `all`)
-
-These enable integrations with SAGE, OpenAI, HuggingFace, and GPU support.
+- adapter-specific environment variables (e.g. `OPENAI_API_KEY`, `HF_TOKEN`, `SAGE_USER`, `SAGE_PASSWORD`)
 
 ### 4. GPU Support
 
