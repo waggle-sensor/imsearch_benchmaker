@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  imsearch_benchmarks:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: imsearch_benchmarks:latest
+    container_name: imsearch_benchmarks
+    volumes:
+      # Mount data directories
+      - ./volumes/config:/app/config
+      - ./volumes/inputs:/app/input
+      - ./volumes/outputs:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # set ENV variables for Adapters such as...
+      # - SAGE_USER=${SAGE_USER:-}
+      # - SAGE_PASSWORD=${SAGE_PASSWORD:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
