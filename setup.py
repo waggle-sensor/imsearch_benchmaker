@@ -8,7 +8,7 @@ optional adapters for different services (OpenAI, local CLIP, etc.).
 from pathlib import Path
 from setuptools import setup, find_packages
 
-VERSION = "0.1.7" 
+VERSION = "0.1.8" 
 
 def parse_requirements(requirements_path: Path) -> list[str]:
     """Helper function to parse requirements file, filtering out empty lines and comments."""
@@ -62,7 +62,7 @@ setup(
     author_email="francisco.lozano@northwestern.edu",
     url="https://github.com/waggle-sensor/imsearch_benchmaker",
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
-    python_requires=">=3.11",
+    python_requires=">=3.10",
     install_requires=CORE_DEPS,
     extras_require=EXTRAS,
     entry_points={
