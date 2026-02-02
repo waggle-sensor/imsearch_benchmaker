@@ -17,7 +17,7 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeVar
-import tomllib
+import tomli as tomllib
 
 # TypeVar for generic return types in class methods
 T = TypeVar("T", bound="BenchmarkConfig")
