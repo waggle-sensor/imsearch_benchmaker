@@ -56,6 +56,7 @@ query_plan_candidate_image_ids_column = "candidate_image_ids"
 # Hugging Face configuration (sensitive fields use _ prefix)
 _hf_repo_id = "exampleorganization/NewExample"
 _hf_private = false
+_hf_num_proc = 4
 
 # Boolean columns
 columns_boolean = ["flame_visible"]
