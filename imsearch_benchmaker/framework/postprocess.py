@@ -1400,6 +1400,7 @@ def huggingface(
     token: Optional[str] = None,
     private: Optional[bool] = None,
     config: Optional[BenchmarkConfig] = None,
+    num_proc: Optional[int] = None,
 ) -> None:
     """
     Prepare and optionally upload the dataset to Hugging Face Hub.
@@ -1496,6 +1497,7 @@ def huggingface(
     
     token = token or config._hf_token
     private = private if private is not None else (config._hf_private if config._hf_private is not None else False)
+    num_proc = num_proc or config._hf_num_proc
     
     logger.info(f"Uploading dataset to Hugging Face Hub: {repo_id}...")
     client = _initialize_hf_client(token=token)
@@ -1505,6 +1507,7 @@ def huggingface(
         private=private, 
         token=token,
         commit_message="Uploaded dataset using imsearch_benchmaker",
+        num_proc=num_proc,
     )
     logger.info(f"Dataset successfully uploaded to Hugging Face Hub: {repo_id}")
     logger.info(f"   Repository: https://huggingface.co/datasets/{repo_id}")

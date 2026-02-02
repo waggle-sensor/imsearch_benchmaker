@@ -249,7 +249,8 @@ class BenchmarkConfig:
     _hf_token: Optional[str] = field(default_factory=lambda: os.getenv("HF_TOKEN"))
     _hf_repo_id: Optional[str] = None
     _hf_private: Optional[bool] = None
-
+    _hf_num_proc: Optional[int] = None
+    
     # Adapter configurations
     vision_config: VisionConfig = field(default_factory=VisionConfig)
     judge_config: JudgeConfig = field(default_factory=JudgeConfig)
