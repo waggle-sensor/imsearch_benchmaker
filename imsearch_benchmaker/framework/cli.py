@@ -13,11 +13,19 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tqdm import tqdm
 
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
 from .preprocess import build_images_jsonl, build_seeds_jsonl, check_image_urls, remove_macos_metadata_files
 from .query_plan import TagOverlapQueryPlan, build_query_plan, load_annotations
-from .postprocess import calculate_similarity_score, generate_dataset_summary, huggingface
+from .postprocess import (
+    generate_dataset_summary,
+    huggingface,
+    read_jsonl_list,
+    _get_similarity_adapter_and_col_name,
+    _build_image_url_map,
+    calculate_similarity_scores,
+)
 from .scoring import SimilarityAdapterRegistry
 from .cost import (
     aggregate_cost_summaries,
@@ -501,7 +509,7 @@ def run_all(
             # Get column name from config
             col_name = config.similarity_config.col_name or "similarity_score"
             
-            calculate_similarity_score(
+            run_similarity(
                 qrels_path=None,  # Use config.qrels_jsonl
                 output_path=None,  # Use config.qrels_with_score_jsonl
                 col_name=col_name,
@@ -1713,6 +1721,171 @@ def run_judge_retry(
     return out_batch_jsonl
 
 
+def run_similarity(
+    qrels_path: Optional[Path] = None,
+    output_path: Optional[Path] = None,
+    col_name: Optional[str] = None,
+    adapter_name: Optional[str] = None,
+    images_jsonl_path: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+) -> Path:
+    """
+    Calculate similarity score (e.g., CLIPScore) for each row in qrels JSONL and add it as a column.
+    
+    Args:
+        qrels_path: Path to the input qrels.jsonl file. If None, uses config.qrels_jsonl.
+        output_path: Path to save the output qrels.jsonl with similarity score column. If None, uses config.qrels_with_score_jsonl.
+        col_name: Name of the column to add the similarity score to. If None, uses config.similarity_config.col_name or defaults to "similarity_score".
+        adapter_name: Optional similarity adapter name. If None, uses config.similarity_config.adapter.
+        images_jsonl_path: Path to images.jsonl file containing image_id to image_url mappings. If None, uses config.images_jsonl.
+        config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Returns:
+        Path to the output file.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    # Get paths from config if not provided
+    qrels_path = Path(qrels_path) if qrels_path else (Path(config.qrels_jsonl) if config.qrels_jsonl else None)
+    output_path = Path(output_path) if output_path else (Path(config.qrels_with_score_jsonl) if config.qrels_with_score_jsonl else None)
+    images_jsonl_path = Path(images_jsonl_path) if images_jsonl_path else (Path(config.images_jsonl) if config.images_jsonl else None)
+    
+    if qrels_path is None:
+        raise ValueError("qrels_path must be provided or set in config.qrels_jsonl")
+    if output_path is None:
+        raise ValueError("output_path must be provided or set in config.qrels_with_score_jsonl")
+    if images_jsonl_path is None:
+        raise ValueError("images_jsonl_path must be provided or set in config.images_jsonl")
+    
+    # Get adapter and column name
+    adapter, col_name = _get_similarity_adapter_and_col_name(col_name, adapter_name, config)
+    
+    # Load qrels
+    qrels = read_jsonl_list(qrels_path)
+
+    # Validate required columns
+    required_columns = config.required_qrels_columns()
+    for col in required_columns:
+        if not any(col in row for row in qrels):
+            raise ValueError(f"Missing required column '{col}' in qrels")
+
+    # Build image URL map
+    image_url_map = _build_image_url_map(images_jsonl_path, config)
+
+    # Calculate similarity scores for all rows
+    successful, failed = calculate_similarity_scores(
+        qrels=qrels,
+        row_indices=None,  # Process all rows
+        image_url_map=image_url_map,
+        adapter=adapter,
+        col_name=col_name,
+        config=config,
+        desc="Calculating similarity scores",
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        for row in qrels:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    
+    return output_path
+
+
+def run_similarity_retry(
+    qrels_with_score_jsonl: Optional[Path] = None,
+    images_jsonl: Optional[Path] = None,
+    output_path: Optional[Path] = None,
+    col_name: Optional[str] = None,
+    adapter_name: Optional[str] = None,
+    config: Optional[BenchmarkConfig] = None,
+) -> Path:
+    """
+    Retry similarity score calculation for failed rows.
+    
+    Reads the qrels_with_score_jsonl file and identifies rows where the similarity
+    score is None or missing. Re-runs similarity calculation for those rows only
+    and updates the output file.
+    
+    Args:
+        qrels_with_score_jsonl: Path to input qrels with score JSONL. If None, uses config.qrels_with_score_jsonl.
+        images_jsonl: Path to images JSONL file. If None, uses config.images_jsonl.
+        output_path: Path to save updated qrels with score JSONL. If None, overwrites input file.
+        col_name: Name of the similarity score column. If None, uses config.similarity_config.col_name.
+        adapter_name: Similarity adapter name. If None, uses config.similarity_config.adapter.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Returns:
+        Path to the updated output file.
+        
+    Raises:
+        ValueError: If required paths are not provided and not in config.
+        FileNotFoundError: If qrels_with_score_jsonl does not exist.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    if qrels_with_score_jsonl is None:
+        qrels_with_score_jsonl = Path(config.qrels_with_score_jsonl) if config.qrels_with_score_jsonl else None
+    if qrels_with_score_jsonl is None:
+        raise ValueError("qrels_with_score_jsonl must be provided or set in config.qrels_with_score_jsonl")
+    qrels_with_score_jsonl = Path(qrels_with_score_jsonl)
+    
+    if not qrels_with_score_jsonl.exists():
+        raise FileNotFoundError(f"Qrels with score file not found: {qrels_with_score_jsonl}")
+    
+    if images_jsonl is None:
+        images_jsonl = Path(config.images_jsonl) if config.images_jsonl else None
+    if images_jsonl is None:
+        raise ValueError("images_jsonl must be provided or set in config.images_jsonl")
+    images_jsonl = Path(images_jsonl)
+    
+    if output_path is None:
+        output_path = qrels_with_score_jsonl
+    output_path = Path(output_path)
+    
+    # Get adapter and column name
+    adapter, col_name = _get_similarity_adapter_and_col_name(col_name, adapter_name, config)
+    
+    # Load all qrels rows
+    qrels = list(read_jsonl(qrels_with_score_jsonl))
+    
+    # Build image URL map
+    image_url_map = _build_image_url_map(images_jsonl, config)
+    
+    # Identify failed rows (where similarity score is None or missing)
+    failed_rows = []
+    for i, row in enumerate(qrels):
+        score = row.get(col_name)
+        if score is None:
+            failed_rows.append(i)
+    
+    if not failed_rows:
+        logger.warning(f"[SIMILARITY] No failed similarity scores found in {qrels_with_score_jsonl}")
+        return output_path
+    
+    logger.info(f"[SIMILARITY] Found {len(failed_rows)} failed rows to retry out of {len(qrels)} total rows")
+    
+    # Retry similarity calculation for failed rows
+    successful, failed = calculate_similarity_scores(
+        qrels=qrels,
+        row_indices=failed_rows,
+        image_url_map=image_url_map,
+        adapter=adapter,
+        col_name=col_name,
+        config=config,
+        desc="Retrying similarity scores",
+    )
+    
+    # Write updated qrels
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        for row in qrels:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    
+    logger.info(f"[SIMILARITY] Retry complete: {successful} successful, {failed} failed. Updated file: {output_path}")
+    
+    return output_path
+
+
 # -----------------------------
 # List Batches Function
 # -----------------------------
@@ -1937,6 +2110,13 @@ def build_cli_parser() -> argparse.ArgumentParser:
     similarity_parser.add_argument("--output-jsonl", type=Path, help="Output qrels with score (or use config.qrels_with_score_jsonl)")
     similarity_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
     similarity_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    similarity_retry_parser = postprocess_subparsers.add_parser("similarity-retry", help="Retry failed similarity score calculations")
+    similarity_retry_parser.add_argument("--qrels-with-score-jsonl", type=Path, help="Input qrels with score JSONL (or use config.qrels_with_score_jsonl)")
+    similarity_retry_parser.add_argument("--images-jsonl", type=Path, help="Input images.jsonl (or use config.images_jsonl)")
+    similarity_retry_parser.add_argument("--output-jsonl", type=Path, help="Output qrels with score JSONL (default: overwrites input)")
+    similarity_retry_parser.add_argument("--adapter", help="Similarity adapter name (overrides config)")
+    similarity_retry_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
     summary_parser = postprocess_subparsers.add_parser("summary", help="Generate dataset summary")
     summary_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
@@ -2311,7 +2491,7 @@ def main() -> None:
             # Get column name from config
             col_name = config.similarity_config.col_name or "similarity_score"
             
-            calculate_similarity_score(
+            run_similarity(
                 qrels_path=getattr(args, "qrels_jsonl", None),
                 output_path=getattr(args, "output_jsonl", None),
                 col_name=col_name,
@@ -2321,6 +2501,22 @@ def main() -> None:
             )
             output_path = getattr(args, "output_jsonl", None) or config.qrels_with_score_jsonl
             logger.info(f"✅ Similarity score calculation complete -> {output_path}")
+        elif args.postprocess_cmd == "similarity-retry":
+            # Get adapter name from config or argument
+            adapter_name = getattr(args, "adapter", None) or config.similarity_config.adapter
+            
+            # Get column name from config
+            col_name = config.similarity_config.col_name or "similarity_score"
+            
+            output_path = run_similarity_retry(
+                qrels_with_score_jsonl=getattr(args, "qrels_with_score_jsonl", None),
+                images_jsonl=getattr(args, "images_jsonl", None),
+                output_path=getattr(args, "output_jsonl", None),
+                col_name=col_name,
+                adapter_name=adapter_name,
+                config=config,
+            )
+            logger.info(f"✅ Similarity retry complete -> {output_path}")
         elif args.postprocess_cmd == "summary":
             generate_dataset_summary(
                 qrels_path=getattr(args, "qrels_jsonl", None),

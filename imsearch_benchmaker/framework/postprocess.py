@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import time
 
 import matplotlib.pyplot as plt
@@ -1037,39 +1037,25 @@ def generate_cost_summary(
         logger.debug(f"Total cost: ${total_summary.total_cost:.2f}")
 
 
-def calculate_similarity_score(
-    qrels_path: Optional[Path] = None,
-    output_path: Optional[Path] = None,
-    col_name: Optional[str] = None,
-    adapter_name: Optional[str] = None,
-    images_jsonl_path: Optional[Path] = None,
-    config: Optional[BenchmarkConfig] = None,
-) -> None:
+def _get_similarity_adapter_and_col_name(
+    col_name: Optional[str],
+    adapter_name: Optional[str],
+    config: BenchmarkConfig,
+) -> Tuple[Any, str]:
     """
-    Calculate similarity score (e.g., CLIPScore) for each row in qrels JSONL and add it as a column.
+    Get similarity adapter and column name from config or parameters.
     
     Args:
-        qrels_path: Path to the input qrels.jsonl file. If None, uses config.qrels_jsonl.
-        output_path: Path to save the output qrels.jsonl with similarity score column. If None, uses config.qrels_with_score_jsonl.
-        col_name: Name of the column to add the similarity score to. If None, uses config.similarity_config.col_name or defaults to "similarity_score".
-        adapter_name: Optional similarity adapter name. If None, uses config.similarity_config.adapter.
-        images_jsonl_path: Path to images.jsonl file containing image_id to image_url mappings. If None, uses config.images_jsonl.
-        config: Optional BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        col_name: Column name override. If None, uses config.
+        adapter_name: Adapter name override. If None, uses config.
+        config: BenchmarkConfig instance.
+        
+    Returns:
+        Tuple of (adapter, col_name).
+        
+    Raises:
+        ValueError: If adapter name is not available or adapter initialization fails.
     """
-    config = config or DEFAULT_BENCHMARK_CONFIG
-    
-    # Get paths from config if not provided
-    qrels_path = Path(qrels_path) if qrels_path else (Path(config.qrels_jsonl) if config.qrels_jsonl else None)
-    output_path = Path(output_path) if output_path else (Path(config.qrels_with_score_jsonl) if config.qrels_with_score_jsonl else None)
-    images_jsonl_path = Path(images_jsonl_path) if images_jsonl_path else (Path(config.images_jsonl) if config.images_jsonl else None)
-    
-    if qrels_path is None:
-        raise ValueError("qrels_path must be provided or set in config.qrels_jsonl")
-    if output_path is None:
-        raise ValueError("output_path must be provided or set in config.qrels_with_score_jsonl")
-    if images_jsonl_path is None:
-        raise ValueError("images_jsonl_path must be provided or set in config.images_jsonl")
-    
     # Determine column name from config or parameter, with fallback
     if col_name is None:
         col_name = config.similarity_config.col_name or "similarity_score"
@@ -1094,41 +1080,86 @@ def calculate_similarity_score(
             f"Failed to initialize similarity adapter '{adapter_name}': {e}. "
             f"Available adapters: {', '.join(available_adapters)}"
         ) from e
-    qrels = read_jsonl_list(qrels_path)
+    
+    return adapter, col_name
 
-    required_columns = config.required_qrels_columns()
-    for col in required_columns:
-        if not any(col in row for row in qrels):
-            raise ValueError(f"Missing required column '{col}' in qrels")
 
+def _build_image_url_map(
+    images_jsonl_path: Path,
+    config: BenchmarkConfig,
+) -> Dict[str, str]:
+    """
+    Build a mapping from image_id to image_url from images.jsonl.
+    
+    Args:
+        images_jsonl_path: Path to images.jsonl file.
+        config: BenchmarkConfig instance.
+        
+    Returns:
+        Dictionary mapping image_id to image_url.
+        
+    Raises:
+        FileNotFoundError: If images_jsonl_path does not exist.
+        ValueError: If images_jsonl_path is required but not provided.
+    """
+    if not images_jsonl_path.exists():
+        raise FileNotFoundError(f"Images JSONL file not found: {images_jsonl_path}")
+    
     image_url_map: Dict[str, str] = {}
-    if images_jsonl_path and images_jsonl_path.exists():
-        images_data = read_jsonl_list(images_jsonl_path)
-        for img_row in images_data:
-            img_id = img_row.get(config.column_image_id)
-            img_url = img_row.get(config.image_url_temp_column)
-            if img_id and img_url:
-                image_url_map[img_id] = img_url
-    else:
-        raise ValueError("images_jsonl_path is required for similarity score calculation.")
+    images_data = read_jsonl_list(images_jsonl_path)
+    for img_row in images_data:
+        img_id = img_row.get(config.column_image_id)
+        img_url = img_row.get(config.image_url_temp_column)
+        if img_id and img_url:
+            image_url_map[img_id] = img_url
+    
+    return image_url_map
 
-    total_rows = len(qrels)
+
+def calculate_similarity_scores(
+    qrels: List[Dict[str, Any]],
+    row_indices: List[int],
+    image_url_map: Dict[str, str],
+    adapter: Any,
+    col_name: str,
+    config: BenchmarkConfig,
+    desc: str = "Calculating similarity scores",
+) -> tuple[int, int]:
+    """
+    Calculate similarity scores for specific rows in qrels.
+    
+    Args:
+        qrels: List of qrels rows to update.
+        row_indices: List of row indices to process. If None or empty, processes all rows.
+        image_url_map: Mapping from image_id to image_url.
+        adapter: Similarity adapter instance.
+        col_name: Name of the similarity score column.
+        config: BenchmarkConfig instance.
+        desc: Progress bar description.
+        
+    Returns:
+        Tuple of (successful_count, failed_count).
+    """
+    if not row_indices:
+        row_indices = list(range(len(qrels)))
+    
     successful = 0
     failed = 0
-
-    # Use tqdm for progress bar
-    with tqdm(total=total_rows, desc="Calculating similarity scores", unit="image-query-pair") as pbar:
-        for row in qrels:
+    
+    with tqdm(total=len(row_indices), desc=desc, unit="row") as pbar:
+        for i in row_indices:
+            row = qrels[i]
             try:
                 query_text = row.get(config.column_query, "")
                 image_id = row.get(config.column_image_id, "")
+                
                 if not query_text or not image_id:
                     row[col_name] = None
                     failed += 1
                     pbar.update(1)
                     pbar.set_postfix({"success": successful, "failed": failed})
                     continue
-
+                
                 image_url = image_url_map.get(image_id)
                 if not image_url:
                     row[col_name] = None
@@ -1136,22 +1167,20 @@ def calculate_similarity_score(
                     pbar.update(1)
                     pbar.set_postfix({"success": successful, "failed": failed})
                     continue
-
+                
                 score = adapter.score(query_text, image_url)
                 row[col_name] = score
                 successful += 1
                 pbar.update(1)
                 pbar.set_postfix({"success": successful, "failed": failed})
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[SIMILARITY] Failed to calculate similarity for row {i}: {e}")
                 row[col_name] = None
                 failed += 1
                 pbar.update(1)
                 pbar.set_postfix({"success": successful, "failed": failed})
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        for row in qrels:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    
+    return successful, failed
 
 
 def _upload_dataset_card(

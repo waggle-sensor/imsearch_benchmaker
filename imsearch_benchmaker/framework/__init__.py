@@ -7,7 +7,7 @@ from .judge import Judge, JudgeAdapterRegistry
 from .scoring import Similarity, SimilarityAdapterRegistry
 from .preprocess import build_images_jsonl, build_seeds_jsonl
 from .query_plan import build_query_plan, load_annotations, TagOverlapQueryPlan
-from .postprocess import generate_dataset_summary, calculate_similarity_score, huggingface
+from .postprocess import generate_dataset_summary, huggingface
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG, VisionConfig, JudgeConfig, SimilarityConfig
 from .cli import (
     run_preprocess,
@@ -31,7 +31,6 @@ __all__ = [
     "load_annotations",
     "TagOverlapQueryPlan",
     "generate_dataset_summary",
-    "calculate_similarity_score",
     "huggingface",
     "BenchmarkConfig",
     "DEFAULT_BENCHMARK_CONFIG",
