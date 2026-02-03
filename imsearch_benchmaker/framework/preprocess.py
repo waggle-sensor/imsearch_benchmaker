@@ -539,13 +539,16 @@ def check_image_urls(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_row = {executor.submit(check_url, row): row for row in rows}
         
-        for future in concurrent.futures.as_completed(future_to_row):
-            image_id, is_reachable = future.result()
-            if is_reachable:
-                success_count += 1
-            else:
-                failed_count += 1
-                failed_image_ids.append(image_id)
+        with tqdm(total=total_count, desc="Checking image URLs", unit="image") as pbar:
+            for future in concurrent.futures.as_completed(future_to_row):
+                image_id, is_reachable = future.result()
+                if is_reachable:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    failed_image_ids.append(image_id)
+                pbar.update(1)
+                pbar.set_postfix({"success": success_count, "failed": failed_count})
     
     logger.info(f"[PREPROCESS] URL check complete: {success_count}/{total_count} successful, {failed_count} failed")
     
