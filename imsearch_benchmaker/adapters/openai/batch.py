@@ -147,7 +147,7 @@ def wait_for_batch(client: OpenAI, batch_id: str, poll_s: int = 60) -> Dict[str,
     
     # Initialize progress bar - start with unknown total, will update when we get request counts
     pbar = tqdm(
-        desc=f"Batch {batch_id[:12]}...",
+        desc=f"Batch ...{batch_id[-12:]}",
         unit="requests",
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}] {postfix}",
         dynamic_ncols=True,
