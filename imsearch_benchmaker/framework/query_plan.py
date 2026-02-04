@@ -418,8 +418,8 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
             })
 
         # Log summary of failed and succeeded seeds        
-        logger.info(f"[QUERY_PLAN] Failed seeds: {failed_seeds}")
-        logger.info(f"[QUERY_PLAN] Succeeded seeds: {succeeded_seeds}")
+        logger.info(f"[QUERY_PLAN] Failed seeds: {len(failed_seeds)}")
+        logger.info(f"[QUERY_PLAN] Succeeded seeds: {len(succeeded_seeds)}")
         logger.info(f"[QUERY_PLAN] Built {len(rows_out)} query plan(s) from {total_queries} seed query(s)")
 
         return rows_out
