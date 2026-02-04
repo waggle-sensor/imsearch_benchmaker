@@ -693,7 +693,14 @@ def run_vision_submit(
     batch_id_str = format_batch_id(batch_ref)
     if batch_id_file is None:
         batch_id_file = batch_input_jsonl.parent / ".vision_batch_id"
-    save_batch_id(batch_id_str, batch_id_file)
+    
+    # Append batch ID to file if it exists, otherwise create new
+    if batch_id_file.exists():
+        existing_ids = load_batch_id(batch_id_file)
+        combined_ids = f"{existing_ids},{batch_id_str}" if existing_ids else batch_id_str
+        save_batch_id(combined_ids, batch_id_file)
+    else:
+        save_batch_id(batch_id_str, batch_id_file)
     
     logger.info(f"[VISION] Submitted vision batch: {batch_id_str}")
     return batch_id_str
@@ -1132,7 +1139,14 @@ def run_judge_submit(
     batch_id_str = format_batch_id(batch_ref)
     if batch_id_file is None:
         batch_id_file = batch_input_jsonl.parent / ".judge_batch_id"
-    save_batch_id(batch_id_str, batch_id_file)
+    
+    # Append batch ID to file if it exists, otherwise create new
+    if batch_id_file.exists():
+        existing_ids = load_batch_id(batch_id_file)
+        combined_ids = f"{existing_ids},{batch_id_str}" if existing_ids else batch_id_str
+        save_batch_id(combined_ids, batch_id_file)
+    else:
+        save_batch_id(batch_id_str, batch_id_file)
     
     logger.info(f"[JUDGE] Submitted judge batch: {batch_id_str}")
     return batch_id_str
