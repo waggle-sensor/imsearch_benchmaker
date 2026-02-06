@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Iterable, List
 from pathlib import Path
 import tempfile
-import string
+import re
 
 from .config import OpenAIVisionConfig
 from .client import get_openai_client
@@ -160,20 +160,25 @@ class OpenAIVision(Vision):
         metadata_dict = image.metadata or {}
         
         def interpolate_prompt(prompt: str) -> str:
-            """Interpolate metadata placeholders in prompt text."""
+            """Interpolate metadata placeholders in prompt text.
+            If {metadata.column_name} is in the prompt but metadata is missing/None, replace with 'None (no label)'.
+            """
             if not prompt:
                 return prompt
-            
-            # Use string.Template for safe substitution
-            # Replace {metadata.column_name} with actual values
+
+            # Regex to find all {metadata.column_name} patterns
+            pattern = r"\{metadata\.([a-zA-Z0-9_]+)\}"
             result = prompt
-            for key, value in metadata_dict.items():
-                placeholder = f"{{metadata.{key}}}"
-                if placeholder in result:
-                    # Convert value to string, handle None/empty
-                    str_value = str(value) if value is not None else ""
-                    result = result.replace(placeholder, str_value)
-            
+
+            # Search for all placeholders
+            placeholders = re.findall(pattern, prompt)
+            for key in set(placeholders):
+                value = metadata_dict.get(key, None)
+                if value is None:
+                    str_value = "None (no label)"
+                else:
+                    str_value = str(value)
+                result = result.replace(f"{{metadata.{key}}}", str_value)
             return result
         
         system_prompt_interpolated = interpolate_prompt(self.system_prompt or "")
