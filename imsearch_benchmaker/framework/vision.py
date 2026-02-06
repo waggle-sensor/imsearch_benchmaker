@@ -191,12 +191,15 @@ class Vision(ABC):
         pass
 
     @staticmethod
-    def interpolate_prompt(prompt: str, metadata_dict: Dict[str, Any]) -> str:
+    def interpolate_prompt(prompt: str, image: VisionImage) -> str:
         """Interpolate metadata placeholders in prompt text.
         If {metadata.column_name} is in the prompt but metadata is missing/None, replace with 'None (no label)'.
         """
         if not prompt:
             return prompt
+        
+        # Get metadata from image
+        metadata_dict = image.metadata or {}
 
         # Regex to find all {metadata.column_name} patterns
         pattern = r"\{metadata\.([a-zA-Z0-9_]+)\}"
