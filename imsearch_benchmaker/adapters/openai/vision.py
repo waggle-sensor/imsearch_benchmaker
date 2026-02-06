@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Iterable, List
 from pathlib import Path
 import tempfile
+import string
 
 from .config import OpenAIVisionConfig
 from .client import get_openai_client
@@ -154,14 +155,38 @@ class OpenAIVision(Vision):
 
 
     def build_request(self, image: VisionImage) -> Dict[str, object]:
+        # Interpolate metadata into prompts using template placeholders
+        # Support {metadata.column_name} format
+        metadata_dict = image.metadata or {}
+        
+        def interpolate_prompt(prompt: str) -> str:
+            """Interpolate metadata placeholders in prompt text."""
+            if not prompt:
+                return prompt
+            
+            # Use string.Template for safe substitution
+            # Replace {metadata.column_name} with actual values
+            result = prompt
+            for key, value in metadata_dict.items():
+                placeholder = f"{{metadata.{key}}}"
+                if placeholder in result:
+                    # Convert value to string, handle None/empty
+                    str_value = str(value) if value is not None else ""
+                    result = result.replace(placeholder, str_value)
+            
+            return result
+        
+        system_prompt_interpolated = interpolate_prompt(self.system_prompt or "")
+        user_prompt_interpolated = interpolate_prompt(self.user_prompt or "")
+        
         body: Dict[str, object] = {
             "model": self.model,
             "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": self.system_prompt}]},
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt_interpolated}]},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": self.user_prompt},
+                        {"type": "input_text", "text": user_prompt_interpolated},
                         {
                             "type": "input_image",
                             "image_url": image.image_url,
