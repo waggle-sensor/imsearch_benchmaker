@@ -319,6 +319,7 @@ def build_images_jsonl(
     out_jsonl: Path,
     image_base_url: Optional[str] = None,
     meta_json: Optional[Path] = None,
+    metadata_jsonl: Optional[Path] = None,
     default_license: Optional[str] = None,
     default_doi: Optional[str] = None,
     follow_symlinks: bool = False,
@@ -330,14 +331,16 @@ def build_images_jsonl(
     Build images.jsonl file from a directory of image files.
     
     Scans the input directory for image files, extracts metadata, constructs image URLs,
-    and writes the results to a JSONL file. Supports metadata from JSON config files
-    or interactive prompts.
+    and writes the results to a JSONL file. Supports metadata from JSON config files,
+    metadata JSONL files, or interactive prompts.
     
     Args:
         input_dir: Directory containing image files to process.
         out_jsonl: Path to write the output images.jsonl file.
         image_base_url: Base URL for constructing image URLs. If None, uses config.image_base_url.
         meta_json: Optional path to metadata JSON file with license/DOI information.
+        metadata_jsonl: Optional path to metadata JSONL file with additional metadata to merge.
+            Each row should have image_id plus any additional metadata columns.
         default_license: Default license string if not in metadata.
         default_doi: Default DOI string if not in metadata.
         follow_symlinks: If True, follow symbolic links when scanning directories.
@@ -360,6 +363,19 @@ def build_images_jsonl(
     cfg: Optional[Dict[str, Any]] = None
     if meta_json:
         cfg = load_meta_config(meta_json)
+    
+    # Load metadata JSONL file and create lookup dictionary
+    metadata_lookup: Dict[str, Dict[str, Any]] = {}
+    if metadata_jsonl and Path(metadata_jsonl).exists():
+        logger.info(f"[PREPROCESS] Loading metadata from {metadata_jsonl}...")
+        for row in read_jsonl(metadata_jsonl):
+            image_id = row.get(config.column_image_id)
+            if image_id:
+                # Store all columns except image_id as metadata
+                metadata_lookup[image_id] = {k: v for k, v in row.items() if k != config.column_image_id}
+        logger.info(f"[PREPROCESS] Loaded metadata for {len(metadata_lookup)} image(s)")
+    elif metadata_jsonl:
+        logger.warning(f"[PREPROCESS] Metadata JSONL file not found: {metadata_jsonl}")
 
     if default_license is not None or default_doi is not None:
         default_meta = Meta(
@@ -401,7 +417,13 @@ def build_images_jsonl(
             else:
                 meta = default_meta
 
-            rows.append(build_row(img_path, input_dir, meta, image_base_url=image_base_url, config=config))
+            row = build_row(img_path, input_dir, meta, image_base_url=image_base_url, config=config)
+            
+            # Merge metadata from metadata_jsonl if available
+            if image_id in metadata_lookup:
+                row.update(metadata_lookup[image_id])
+            
+            rows.append(row)
             n += 1
             pbar.update(1)
             pbar.set_postfix({"processed": n, "skipped": pbar.n - n})
