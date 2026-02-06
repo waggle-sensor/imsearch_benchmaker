@@ -13,6 +13,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Iterable, List, Type, Any, Optional
+import re
 
 from .vision_types import VisionAnnotation, VisionImage
 from .config import BenchmarkConfig, VisionConfig
@@ -188,6 +189,29 @@ class Vision(ABC):
             CostSummary object with calculated costs.
         """
         pass
+
+    @staticmethod
+    def interpolate_prompt(prompt: str, metadata_dict: Dict[str, Any]) -> str:
+        """Interpolate metadata placeholders in prompt text.
+        If {metadata.column_name} is in the prompt but metadata is missing/None, replace with 'None (no label)'.
+        """
+        if not prompt:
+            return prompt
+
+        # Regex to find all {metadata.column_name} patterns
+        pattern = r"\{metadata\.([a-zA-Z0-9_]+)\}"
+        result = prompt
+
+        # Search for all placeholders
+        placeholders = re.findall(pattern, prompt)
+        for key in set(placeholders):
+            value = metadata_dict.get(key, None)
+            if value is None:
+                str_value = "None (no label)"
+            else:
+                str_value = str(value)
+            result = result.replace(f"{{metadata.{key}}}", str_value)
+        return result
 
 class VisionAdapterRegistry:
     """
