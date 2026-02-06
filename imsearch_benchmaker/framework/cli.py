@@ -61,6 +61,7 @@ def run_preprocess(
     config: Optional[BenchmarkConfig] = None,
     out_seeds_jsonl: Optional[Path] = None,
     meta_json: Optional[Path] = None,
+    metadata_jsonl: Optional[Path] = None,
     default_license: Optional[str] = None,
     default_doi: Optional[str] = None,
     follow_symlinks: bool = False,
@@ -76,6 +77,7 @@ def run_preprocess(
         config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
         out_seeds_jsonl: Output seeds JSONL path. If None, uses config.seeds_jsonl.
         meta_json: Metadata JSON file path. If None, uses config.meta_json.
+        metadata_jsonl: Metadata JSONL file path with additional metadata to merge. If None, uses config.metadata_jsonl.
         default_license: Default license string.
         default_doi: Default DOI string.
         follow_symlinks: Whether to follow symlinks.
@@ -95,6 +97,7 @@ def run_preprocess(
     out_images_jsonl = Path(out_images_jsonl) if out_images_jsonl else (Path(config.images_jsonl) if config.images_jsonl else None)
     out_seeds_jsonl = Path(out_seeds_jsonl) if out_seeds_jsonl else (Path(config.seeds_jsonl) if config.seeds_jsonl else None)
     meta_json = Path(meta_json) if meta_json else (Path(config.meta_json) if config.meta_json else None)
+    metadata_jsonl = Path(metadata_jsonl) if metadata_jsonl else (Path(config.metadata_jsonl) if config.metadata_jsonl else None)
     
     if input_dir is None:
         raise ValueError("input_dir must be provided or set in config.image_root_dir")
@@ -115,10 +118,12 @@ def run_preprocess(
         out_jsonl=out_images_jsonl,
         image_base_url=config.image_base_url,
         meta_json=meta_json,
+        metadata_jsonl=metadata_jsonl,
         default_license=default_license,
         default_doi=default_doi,
         follow_symlinks=follow_symlinks,
         limit=limit,
+        config=config,
     )
     
     if out_seeds_jsonl:
@@ -603,10 +608,15 @@ def run_vision_make(
     images = []
     for row in read_jsonl(images_jsonl):
         metadata = {}
+        # Keep existing license/doi extraction
         if config.column_license in row:
             metadata[config.column_license] = row[config.column_license]
         if config.column_doi in row:
             metadata[config.column_doi] = row[config.column_doi]
+        # Extract additional configured columns
+        for col_name in config.vision_config.vision_metadata_columns:
+            if col_name in row:
+                metadata[col_name] = row[col_name]
         images.append(VisionImage(
             image_id=row[config.column_image_id],
             image_url=row[config.image_url_temp_column],
@@ -881,10 +891,15 @@ def run_vision_parse(
     images = []
     for row in read_jsonl(images_jsonl):
         metadata = {}
+        # Keep existing license/doi extraction
         if config.column_license in row:
             metadata[config.column_license] = row[config.column_license]
         if config.column_doi in row:
             metadata[config.column_doi] = row[config.column_doi]
+        # Extract additional configured columns
+        for col_name in config.vision_config.vision_metadata_columns:
+            if col_name in row:
+                metadata[col_name] = row[col_name]
         images.append(VisionImage(
             image_id=row[config.column_image_id],
             image_url=row[config.image_url_temp_column],
