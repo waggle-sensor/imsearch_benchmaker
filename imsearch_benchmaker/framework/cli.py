@@ -12,7 +12,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from tqdm import tqdm
 
 from .config import BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG
@@ -37,6 +37,8 @@ from .io import (
     extract_failed_ids,
     save_batch_id,
     load_batch_id,
+    save_batch_map,
+    load_batch_map,
     format_batch_id,
     BatchRefs,
 )
@@ -712,6 +714,20 @@ def run_vision_submit(
     else:
         save_batch_id(batch_id_str, batch_id_file)
     
+    # Track input file -> batch_id for debugging and retries
+    refs_list = [batch_ref] if isinstance(batch_ref, BatchRefs) else batch_ref
+    map_entries = [
+        {
+            "input_file": (ref.input_path.name if getattr(ref, "input_path", None) else batch_input_jsonl.name),
+            "batch_id": ref.batch_id,
+        }
+        for ref in refs_list
+        if isinstance(ref, BatchRefs)
+    ]
+    if map_entries:
+        map_path = batch_id_file.parent / ".vision_batch_map.json"
+        save_batch_map(map_entries, map_path, merge=True)
+    
     logger.info(f"[VISION] Submitted vision batch: {batch_id_str}")
     return batch_id_str
 
@@ -1163,6 +1179,20 @@ def run_judge_submit(
     else:
         save_batch_id(batch_id_str, batch_id_file)
     
+    # Track input file -> batch_id for debugging and retries
+    refs_list = [batch_ref] if isinstance(batch_ref, BatchRefs) else batch_ref
+    map_entries = [
+        {
+            "input_file": (ref.input_path.name if getattr(ref, "input_path", None) else batch_input_jsonl.name),
+            "batch_id": ref.batch_id,
+        }
+        for ref in refs_list
+        if isinstance(ref, BatchRefs)
+    ]
+    if map_entries:
+        map_path = batch_id_file.parent / ".judge_batch_map.json"
+        save_batch_map(map_entries, map_path, merge=True)
+    
     logger.info(f"[JUDGE] Submitted judge batch: {batch_id_str}")
     return batch_id_str
 
@@ -1593,6 +1623,15 @@ def run_vision_retry(
         else:
             save_batch_id(batch_id_str, batch_id_file)
         
+        refs_list = [batch_ref] if isinstance(batch_ref, BatchRefs) else batch_ref
+        map_entries = [
+            {"input_file": (ref.input_path.name if getattr(ref, "input_path", None) else out_batch_jsonl.name), "batch_id": ref.batch_id}
+            for ref in refs_list
+            if isinstance(ref, BatchRefs)
+        ]
+        if map_entries:
+            save_batch_map(map_entries, batch_id_file.parent / ".vision_retry_batch_map.json", merge=True)
+        
         logger.info(f"[VISION] Submitted vision retry batch: {batch_id_str}")
     
     return out_batch_jsonl
@@ -1744,6 +1783,15 @@ def run_judge_retry(
             save_batch_id(combined_ids, batch_id_file)
         else:
             save_batch_id(batch_id_str, batch_id_file)
+        
+        refs_list = [batch_ref] if isinstance(batch_ref, BatchRefs) else batch_ref
+        map_entries = [
+            {"input_file": (ref.input_path.name if getattr(ref, "input_path", None) else out_batch_jsonl.name), "batch_id": ref.batch_id}
+            for ref in refs_list
+            if isinstance(ref, BatchRefs)
+        ]
+        if map_entries:
+            save_batch_map(map_entries, batch_id_file.parent / ".judge_retry_batch_map.json", merge=True)
         
         logger.info(f"[JUDGE] Submitted judge retry batch: {batch_id_str}")
     
@@ -2070,6 +2118,57 @@ def run_list_batches(
         print(json.dumps(batch, indent=2))
 
 
+def run_show_batch_map(
+    config: Optional[BenchmarkConfig] = None,
+    stage: Optional[str] = None,
+) -> None:
+    """
+    Print input-file -> batch_id mapping from saved batch map files.
+    
+    Reads .vision_batch_map.json, .judge_batch_map.json, and retry variants
+    from config output directories and prints the mapping (useful for debugging
+    and retrying failed batches).
+    
+    Args:
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        stage: If set, only show "vision", "judge", "vision-retry", or "judge-retry".
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    stages = [stage] if stage else ["vision", "judge", "vision-retry", "judge-retry"]
+    shown = False
+
+    def dirs_and_maps() -> List[Tuple[Path, str, Path]]:
+        out: List[Tuple[Path, str, Path]] = []
+        if config.annotations_jsonl:
+            d = Path(config.annotations_jsonl).parent
+            if "vision" in stages:
+                out.append((d, "Vision batch map", d / ".vision_batch_map.json"))
+            if "vision-retry" in stages:
+                out.append((d, "Vision retry batch map", d / ".vision_retry_batch_map.json"))
+        if config.qrels_jsonl or config.query_plan_jsonl:
+            d = Path(config.qrels_jsonl or config.query_plan_jsonl).parent
+            if "judge" in stages:
+                out.append((d, "Judge batch map", d / ".judge_batch_map.json"))
+            if "judge-retry" in stages:
+                out.append((d, "Judge retry batch map", d / ".judge_retry_batch_map.json"))
+        return out
+
+    for dir_path, label, map_path in dirs_and_maps():
+        entries = load_batch_map(map_path)
+        if not entries:
+            print(f"\n{label} ({dir_path}): (no map file or empty)")
+            continue
+        shown = True
+        print(f"\n========== {label.upper()} ({dir_path}) ==========")
+        for e in entries:
+            input_file = e.get("input_file", "?")
+            batch_id = e.get("batch_id", "?")
+            print(f"  {input_file}  ->  {batch_id}")
+
+    if not shown and stage:
+        print(f"\nNo batch map found for stage: {stage}")
+
+
 # -----------------------------
 # CLI Interface
 # -----------------------------
@@ -2257,6 +2356,11 @@ def build_cli_parser() -> argparse.ArgumentParser:
     list_batches_parser.add_argument("--adapter", help="Adapter name (overrides config)")
     list_batches_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
+    # Show batch map (input file -> batch_id)
+    show_batch_map_parser = subparsers.add_parser("show-batch-map", help="Show input-file -> batch_id mapping from saved batch map files")
+    show_batch_map_parser.add_argument("--stage", choices=["vision", "judge", "vision-retry", "judge-retry"], help="Only show this stage")
+    show_batch_map_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
     # Upload
     upload_parser = subparsers.add_parser("upload", help="Upload dataset to Hugging Face")
     upload_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_with_score_jsonl or config.qrels_jsonl)")
@@ -2389,9 +2493,13 @@ def run_clean(
         
         batch_id_patterns = [
             ".vision_batch_id",
+            ".vision_batch_map.json",
             ".vision_retry_batch_id",
+            ".vision_retry_batch_map.json",
             ".judge_batch_id",
+            ".judge_batch_map.json",
             ".judge_retry_batch_id",
+            ".judge_retry_batch_map.json",
         ]
         
         for common_dir in set(common_dirs):  # Use set to avoid duplicates
@@ -2733,6 +2841,11 @@ def main() -> None:
             limit=getattr(args, "limit", 50),
             config=config,
             adapter_name=getattr(args, "adapter", None),
+        )
+    elif args.command == "show-batch-map":
+        run_show_batch_map(
+            config=config,
+            stage=getattr(args, "stage", None),
         )
     
     # All (full pipeline)
