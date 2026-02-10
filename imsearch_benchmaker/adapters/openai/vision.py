@@ -154,14 +154,18 @@ class OpenAIVision(Vision):
 
 
     def build_request(self, image: VisionImage) -> Dict[str, object]:
+        # Interpolate metadata into prompts using template placeholders    
+        system_prompt_interpolated = self.interpolate_prompt(self.system_prompt or "", image)
+        user_prompt_interpolated = self.interpolate_prompt(self.user_prompt or "", image)
+        
         body: Dict[str, object] = {
             "model": self.model,
             "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": self.system_prompt}]},
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt_interpolated}]},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": self.user_prompt},
+                        {"type": "input_text", "text": user_prompt_interpolated},
                         {
                             "type": "input_image",
                             "image_url": image.image_url,

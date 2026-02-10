@@ -72,6 +72,8 @@ class VisionConfig:
         controlled_tag_vocab: Controlled vocabulary list for tagging by the vision model.
         min_tags: Minimum number of tags the vision model will include in the tagging.
         max_tags: Maximum number of tags the vision model will include in the tagging.
+        vision_metadata_columns: List of column names from images.jsonl to extract into VisionImage.metadata.
+            These columns will be available in prompts via {metadata.column_name} placeholders.
     """
     
     adapter: Optional[str] = None
@@ -86,6 +88,7 @@ class VisionConfig:
     controlled_tag_vocab: List[str] = field(default_factory=list)
     min_tags: int = 14
     max_tags: int = 25
+    vision_metadata_columns: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -175,6 +178,7 @@ class BenchmarkConfig:
         image_root_dir: Input directory containing image files for preprocessing.
         upload_use_local_image_paths: Whether to use local image paths or URLs for uploading to Hugging Face.
         meta_json: Path to metadata JSON file for preprocessing.
+        metadata_jsonl: Path to metadata JSONL file containing additional metadata to merge into images.jsonl during preprocessing. Each row should have image_id plus any additional metadata columns.
         images_jsonl: Path to input images JSONL file.
         seeds_jsonl: Path to input seeds JSONL file.
         annotations_jsonl: Path to output annotations JSONL file (vision step output).
@@ -235,6 +239,7 @@ class BenchmarkConfig:
     # File paths
     image_root_dir: Optional[str] = None
     meta_json: Optional[str] = None
+    metadata_jsonl: Optional[str] = None
     images_jsonl: Optional[str] = None
     seeds_jsonl: Optional[str] = None
     annotations_jsonl: Optional[str] = None

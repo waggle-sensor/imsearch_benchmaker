@@ -95,7 +95,7 @@ def submit_batch(
         metadata=metadata or {},
         endpoint="/v1/responses",
     )
-    return BatchRefs(input_file_id=input_file_id, batch_id=b.id)
+    return BatchRefs(input_file_id=input_file_id, batch_id=b.id, input_path=input_jsonl)
 
 
 def submit_batch_shards(
@@ -280,7 +280,8 @@ def list_batches(client: OpenAI, active_only: bool = False, limit: int = 50, sta
         stage: If provided, filter batches by stage ("vision" or "judge")
         
     Returns:
-        List of batch dictionaries with id, status, endpoint, created_at, metadata, and request_counts
+        List of batch dictionaries with id, status, endpoint, created_at, metadata, request_counts,
+        errors (validation failure reason when failed), and error_file_id (per-request errors file)
     """
     batches = client.batches.list(limit=limit)
     
@@ -306,6 +307,14 @@ def list_batches(client: OpenAI, active_only: bool = False, limit: int = 50, sta
             if batch_stage != stage:
                 continue
         
+        # Error reason (validation failure when status is "failed" and request_counts.total == 0)
+        errors = getattr(b, "errors", None)
+        if errors is not None and hasattr(errors, "model_dump"):
+            errors = errors.model_dump()
+        elif errors is not None and not isinstance(errors, (dict, list, str, type(None))):
+            errors = str(errors)
+        error_file_id = getattr(b, "error_file_id", None)
+        
         result.append({
             "id": b.id,
             "status": b.status,
@@ -313,6 +322,8 @@ def list_batches(client: OpenAI, active_only: bool = False, limit: int = 50, sta
             "created_at": b.created_at,
             "metadata": metadata,
             "request_counts": request_counts,
+            "errors": errors,
+            "error_file_id": error_file_id,
         })
     
     return result

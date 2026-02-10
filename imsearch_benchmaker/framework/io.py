@@ -13,7 +13,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +30,11 @@ class BatchRefs:
     Attributes:
         input_file_id: Identifier for the input file uploaded to the batch service.
         batch_id: Identifier for the batch job submitted to the service.
+        input_path: Optional path to the local input/shard file (e.g. vision_shard_0000.jsonl).
     """
     input_file_id: str
     batch_id: str
+    input_path: Optional[Path] = None
 
 
 def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
@@ -123,6 +125,49 @@ def load_batch_id(batch_id_file: Path) -> str:
     if not batch_id_file.exists():
         raise FileNotFoundError(f"Batch ID file not found: {batch_id_file}")
     return batch_id_file.read_text().strip()
+
+
+def save_batch_map(entries: List[Dict[str, str]], map_path: Path, merge: bool = True) -> None:
+    """
+    Save or append input-file -> batch_id mapping for debugging and retries.
+    
+    Each entry should have "input_file" (e.g. vision_shard_0000.jsonl) and "batch_id".
+    If merge is True, appends to existing mapping at map_path; otherwise overwrites.
+    
+    Args:
+        entries: List of {"input_file": str, "batch_id": str}.
+        map_path: Path to JSON file (e.g. .vision_batch_map.json).
+        merge: If True, load existing entries and extend; otherwise overwrite.
+    """
+    map_path.parent.mkdir(parents=True, exist_ok=True)
+    if merge and map_path.exists():
+        try:
+            existing = json.loads(map_path.read_text(encoding="utf-8"))
+            if isinstance(existing, list):
+                entries = existing + entries
+        except (json.JSONDecodeError, OSError):
+            pass
+    map_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+    logger.info(f"[IO] Saved batch map ({len(entries)} entries) to {map_path}")
+
+
+def load_batch_map(map_path: Path) -> List[Dict[str, str]]:
+    """
+    Load input-file -> batch_id mapping.
+    
+    Args:
+        map_path: Path to JSON file (e.g. .vision_batch_map.json).
+    
+    Returns:
+        List of {"input_file": str, "batch_id": str}. Empty list if file missing or invalid.
+    """
+    if not map_path.exists():
+        return []
+    try:
+        data = json.loads(map_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
 def format_batch_id(batch_ref: Any) -> str:

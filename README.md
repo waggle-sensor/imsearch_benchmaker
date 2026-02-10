@@ -104,7 +104,9 @@ Configuration is done via TOML files (JSON is also supported). The framework use
 - **Column mappings**: Customize column names for your data structure
   - **Column Names**: All fields starting with `column_` or `columns_` define dataset column names
 - **File paths**: Input and output file locations
+  - **Metadata JSONL**: Optional path to metadata JSONL file for merging additional metadata into `images.jsonl`
 - **Adapter settings**: Configure vision, judge, and similarity adapters
+  - **Vision metadata columns**: List of columns to extract into `VisionImage.metadata` for prompt interpolation
 - **Query planning**: Control query generation parameters
 - **Hugging Face**: Repository settings for dataset upload
 - **Logging**: Control logging level
@@ -197,6 +199,68 @@ If no `meta_json` is provided, you'll be prompted for default license, DOI, and 
 The dataset name is stored in the `original_dataset_name` column (configurable via `column_original_dataset_name` in your config) and is used to generate dataset proportion visualizations in the summary output.
 
 See `example/rights_map.json` for a complete example.
+
+### Using Existing Metadata to Help Vision Models
+
+If you have existing metadata (e.g., human-annotated labels, categories, or other pre-existing annotations) that you want to pass to the vision model to help guide its annotations, you can use the metadata extraction and prompt interpolation feature.
+
+#### Step 1: Create a Metadata JSONL File
+
+Create a `metadata.jsonl` file where each row contains an `image_id` plus any additional metadata columns you want to merge:
+
+```jsonl
+{"image_id": "sage/image1.jpg", "existing_label": "wildfire", "category": "outdoor"}
+{"image_id": "sage/image2.jpg", "existing_label": "smoke", "category": "outdoor"}
+{"image_id": "wildfire/image3.jpg", "existing_label": "flame", "category": "emergency"}
+```
+
+#### Step 2: Configure Metadata Merging
+
+Set the path to your metadata JSONL file in `config.toml`:
+
+```toml
+metadata_jsonl = "inputs/metadata.jsonl"
+```
+
+During preprocessing, the metadata from this file will be merged into `images.jsonl` by matching `image_id` values.
+
+#### Step 3: Configure Metadata Column Extraction
+
+Specify which columns from `images.jsonl` should be extracted into `VisionImage.metadata` for use in vision model prompts:
+
+```toml
+[vision_config]
+vision_metadata_columns = ["existing_label", "category"]
+```
+
+#### Step 4: Use Metadata in Prompts
+
+Write template placeholders in your vision model prompts (in `config.toml`) to include the metadata:
+
+```toml
+[vision_config]
+system_prompt = """You are labeling images for a retrieval benchmark.
+This image has existing label: {metadata.existing_label}
+Category: {metadata.category}
+Use this information to guide your annotations."""
+user_prompt = """Analyze the image and output JSON with:
+- summary: <= 30 words, factual, no speculation
+- tags: choose 12-18 tags from the provided enum list
+- confidence: 0..1 per field"""
+```
+
+The framework will automatically interpolate `{metadata.column_name}` placeholders with the actual values from the metadata when building vision requests.
+
+#### Example Workflow
+
+1. Create `metadata.jsonl` with `image_id` and your metadata columns
+2. Set `metadata_jsonl = "inputs/metadata.jsonl"` in config
+3. Run `benchmaker preprocess` - metadata will be merged into `images.jsonl`
+4. Set `vision_metadata_columns = ["existing_label", "category"]` in `[vision_config]`
+5. Add `{metadata.existing_label}` and `{metadata.category}` placeholders in your prompts
+6. Run `benchmaker vision` - the vision model will receive the metadata in its prompts
+
+This allows you to leverage existing annotations or metadata to help the vision model produce more accurate or consistent annotations.
 
 ## CLI Commands
 
@@ -449,6 +513,6 @@ If you use this framework in your research, please cite:
 ```
 
 ## TODOs
-
+- [ ] fix bug where if you run vision-submit with a file input in cli, the batch id is saved in the same directory as the file input but it should be saved in the same place as if when config.toml is used
 - [ ] Add pytest and create a testing pipeline
 - [ ] Add support for more adapters
