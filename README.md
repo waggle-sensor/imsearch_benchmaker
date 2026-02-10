@@ -513,6 +513,6 @@ If you use this framework in your research, please cite:
 ```
 
 ## TODOs
-
+- [ ] fix bug where if you run vision-submit with a file input in cli, the batch id is saved in the same directory as the file input but it should be saved in the same place as if when config.toml is used
 - [ ] Add pytest and create a testing pipeline
 - [ ] Add support for more adapters
