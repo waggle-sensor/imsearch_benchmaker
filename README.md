@@ -459,6 +459,7 @@ Each adapter is configured independently, allowing you to choose the best servic
   - Cost summaries
   - Word clouds
 - `hf_dataset/`: Hugging Face dataset ready for upload
+  - **Row order per query**: For each `query_id`, the **first row** is always the seed image (the ground-truth match for the query). The metadata in that first row (e.g. `summary`, `tags`, taxonomy fields) is the **matching metadata for the query**. All **following rows** for the same `query_id` are candidate images; their metadata is the **metadata for that candidate image**. This is important when using the dataset for evaluation. As an example, if you are using the dataset for evaluation, you can use the first row of each query as the ground-truth match for the query and the following rows as candidate images.
 
 ## Examples
 
