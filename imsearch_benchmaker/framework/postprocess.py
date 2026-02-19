@@ -57,18 +57,21 @@ def read_jsonl_list(path: Path) -> List[Dict[str, Any]]:
 
 def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config: BenchmarkConfig) -> None:
     """
-    Generate donut charts showing image proportions for each taxonomy column.
+    Generate donut charts showing image proportions for each taxonomy and boolean column.
     
     Creates donut charts displaying the distribution of images across different
-    categories for each taxonomy column in the dataset. Charts are arranged in
-    a grid layout with up to 3 columns.
+    categories for each taxonomy column and boolean column in the dataset. Boolean
+    columns are labeled "True" and "False". Charts are arranged in a grid layout
+    with up to 3 columns.
     
     Args:
-        df: DataFrame containing the dataset with taxonomy columns.
+        df: DataFrame containing the dataset with taxonomy and boolean columns.
         output_dir: Directory to save the output PNG file.
         config: BenchmarkConfig instance with column definitions.
     """
-    available_categorical = [col for col in config.columns_taxonomy if col in df.columns]
+    taxonomy_cols = [col for col in config.columns_taxonomy if col in df.columns]
+    boolean_cols = [col for col in config.columns_boolean if col in df.columns]
+    available_categorical = taxonomy_cols + boolean_cols
     if not available_categorical:
         return
 
@@ -93,12 +96,16 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
             image_counts = df[col].value_counts()
 
         total_images = image_counts.sum()
+        is_boolean_col = col in config.columns_boolean
         labels = []
         show_labels = []
         for cat, count in image_counts.items():
             pct = (count / total_images) * 100
             if pct >= 4.0:
-                cat_display = str(cat)[:15] + "..." if len(str(cat)) > 15 else str(cat)
+                if is_boolean_col:
+                    cat_display = "Missing" if pd.isna(cat) else ("True" if (cat is True or cat == 1 or (isinstance(cat, str) and str(cat).lower() in ("true", "1"))) else "False")
+                else:
+                    cat_display = str(cat)[:15] + "..." if len(str(cat)) > 15 else str(cat)
                 labels.append(f"{cat_display}\n({count}, {pct:.1f}%)")
                 show_labels.append(True)
             else:
@@ -128,7 +135,10 @@ def generate_image_proportion_donuts(df: pd.DataFrame, output_dir: Path, config:
                 label_radius = 1.25
                 x = label_radius * np.cos(angle_rad)
                 y = label_radius * np.sin(angle_rad)
-                cat_display = str(cat)[:20] + "..." if len(str(cat)) > 20 else str(cat)
+                if is_boolean_col:
+                    cat_display = "Missing" if pd.isna(cat) else ("True" if (cat is True or cat == 1 or (isinstance(cat, str) and str(cat).lower() in ("true", "1"))) else "False")
+                else:
+                    cat_display = str(cat)[:20] + "..." if len(str(cat)) > 20 else str(cat)
                 ax.text(x, y, f"{cat_display}\n{count} ({pct:.1f}%)",
                         ha="center", va="center", fontsize=9, fontweight="normal",
                         bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7,
