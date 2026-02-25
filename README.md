@@ -280,6 +280,7 @@ benchmaker plan
 benchmaker judge
 benchmaker postprocess similarity
 benchmaker postprocess summary
+benchmaker postprocess add-metadata   # (optional) add vision_metadata_columns to qrels
 benchmaker upload
 ```
 

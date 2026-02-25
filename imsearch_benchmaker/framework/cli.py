@@ -1963,6 +1963,98 @@ def run_similarity_retry(
     return output_path
 
 
+def run_postprocess_add_metadata(
+    qrels_jsonl: Optional[Path] = None,
+    qrels_with_score_jsonl: Optional[Path] = None,
+    annotations_jsonl: Optional[Path] = None,
+    config: Optional[BenchmarkConfig] = None,
+) -> Path:
+    """
+    Add vision metadata columns to qrels (or qrels-with-score) from annotations.
+    
+    Reads annotations JSONL and adds each column in vision_config.vision_metadata_columns
+    to every qrels row by looking up the row's image_id in the annotations. The
+    original file is rewritten in place. If qrels_with_score_jsonl exists, that
+    file is used; otherwise qrels_jsonl is used.
+    
+    Args:
+        qrels_jsonl: Path to qrels JSONL. If None, uses config.qrels_jsonl.
+        qrels_with_score_jsonl: Path to qrels with score JSONL. If None, uses config.qrels_with_score_jsonl.
+        annotations_jsonl: Path to annotations JSONL. If None, uses config.annotations_jsonl.
+        config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
+        
+    Returns:
+        Path to the written file (same as input).
+        
+    Raises:
+        ValueError: If required paths are not provided or no input qrels file exists.
+    """
+    config = config or DEFAULT_BENCHMARK_CONFIG
+    
+    if annotations_jsonl is None:
+        annotations_jsonl = Path(config.annotations_jsonl) if config.annotations_jsonl else None
+    if annotations_jsonl is None:
+        raise ValueError("annotations_jsonl must be provided or set in config.annotations_jsonl")
+    annotations_jsonl = Path(annotations_jsonl)
+    if not annotations_jsonl.exists():
+        raise FileNotFoundError(f"Annotations file not found: {annotations_jsonl}")
+    
+    # Resolve qrels input: prefer qrels_with_score if it exists, else qrels_jsonl
+    qrels_with_path = None
+    if qrels_with_score_jsonl is not None:
+        qrels_with_path = Path(qrels_with_score_jsonl)
+    elif config.qrels_with_score_jsonl:
+        qrels_with_path = Path(config.qrels_with_score_jsonl)
+    
+    qrels_only_path = None
+    if qrels_jsonl is not None:
+        qrels_only_path = Path(qrels_jsonl)
+    elif config.qrels_jsonl:
+        qrels_only_path = Path(config.qrels_jsonl)
+    
+    input_path = None
+    if qrels_with_path and qrels_with_path.exists():
+        input_path = qrels_with_path
+    elif qrels_only_path and qrels_only_path.exists():
+        input_path = qrels_only_path
+    elif qrels_with_path:
+        input_path = qrels_with_path
+    elif qrels_only_path:
+        input_path = qrels_only_path
+    else:
+        raise ValueError(
+            "No qrels input found. Provide --qrels-jsonl or --qrels-with-score-jsonl, "
+            "or set config.qrels_jsonl / config.qrels_with_score_jsonl and ensure the file exists."
+        )
+    
+    metadata_cols = getattr(config.vision_config, "vision_metadata_columns", None) or []
+    if not metadata_cols:
+        logger.warning("[POSTPROCESS] vision_config.vision_metadata_columns is empty; no metadata columns to add")
+        return input_path
+    
+    ann_map = {}
+    for row in read_jsonl(annotations_jsonl):
+        iid = row.get(config.column_image_id)
+        if iid:
+            ann_map[iid] = row
+    
+    qrels = list(read_jsonl(input_path))
+    for row in qrels:
+        image_id = row.get(config.column_image_id)
+        if image_id and image_id in ann_map:
+            ann = ann_map[image_id]
+            for col in metadata_cols:
+                if col in ann:
+                    row[col] = ann[col]
+    
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(input_path, qrels)
+    logger.info(
+        f"[POSTPROCESS] Added {len(metadata_cols)} metadata column(s) to {len(qrels)} rows -> {input_path}"
+    )
+    return input_path
+
+
 # -----------------------------
 # List Batches Function
 # -----------------------------
@@ -2251,6 +2343,19 @@ def build_cli_parser() -> argparse.ArgumentParser:
     summary_parser.add_argument("--output-dir", type=Path, help="Output directory (or use config.summary_output_dir)")
     summary_parser.add_argument("--images-jsonl", type=Path, help="Optional images.jsonl (or use config.images_jsonl)")
     summary_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
+    
+    add_metadata_parser = postprocess_subparsers.add_parser(
+        "add-metadata",
+        help="Add vision metadata columns (vision_metadata_columns) to qrels or qrels-with-score from annotations. Keep in mind if not all queries have values for the metadata columns, they will be filled with None. This is usually the case when multiple datasets are used.",
+    )
+    add_metadata_parser.add_argument("--qrels-jsonl", type=Path, help="Input qrels.jsonl (or use config.qrels_jsonl)")
+    add_metadata_parser.add_argument(
+        "--qrels-with-score-jsonl",
+        type=Path,
+        help="Input qrels with score JSONL (or use config.qrels_with_score_jsonl). If this file exists, it is used and rewritten instead of qrels.jsonl.",
+    )
+    add_metadata_parser.add_argument("--annotations-jsonl", type=Path, help="Annotations JSONL (or use config.annotations_jsonl)")
+    add_metadata_parser.add_argument("--config", type=Path, help=config_help, default=config_default)
     
     # Clean
     clean_parser = subparsers.add_parser("clean", help="Remove intermediate and output files")
@@ -2663,6 +2768,14 @@ def main() -> None:
             )
             output_path = getattr(args, "output_dir", None) or config.summary_output_dir
             logger.info(f"✅ Summary complete -> {output_path}")
+        elif args.postprocess_cmd == "add-metadata":
+            output_path = run_postprocess_add_metadata(
+                qrels_jsonl=getattr(args, "qrels_jsonl", None),
+                qrels_with_score_jsonl=getattr(args, "qrels_with_score_jsonl", None),
+                annotations_jsonl=getattr(args, "annotations_jsonl", None),
+                config=config,
+            )
+            logger.info(f"✅ Add metadata complete -> {output_path}")
     
     elif args.command == "clean":
         run_clean(
