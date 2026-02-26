@@ -310,7 +310,7 @@ FIREBENCH_MAX_QUERIES_PER_BATCH | the maximum number of queries per judge batch 
 FIREBENCH_MAX_CONCURRENT_BATCHES | the maximum number of batches to keep in flight
 FIREBENCH_NEGATIVES_PER_QUERY | the total number of negatives to generate for each query
 FIREBENCH_HARD_NEG | the number of hard negatives to generate for each query
-FIREBENCH_NEARMISS_NEG | the number of nearmiss negatives to generate for each query
+FIREBENCH_NEUTRAL_TOTAL | the number of neutral (one facet off) candidates per query; may be judged positive or negative
 FIREBENCH_EASY_NEG | the number of easy negatives to generate for each query
 FIREBENCH_RANDOM_SEED | the random seed used for reproducibility
 CONTROLLED_TAG_VOCAB | the controlled tag vocabulary for the FireBench benchmark

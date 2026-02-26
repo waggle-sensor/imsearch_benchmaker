@@ -45,10 +45,12 @@ hf_dataset_card_path = "dataset_card.md"
 
 # Query planning
 query_plan_num_seeds = 100  # Number of seed images to use for query generation
-query_plan_neg_total = 12
+query_plan_pos_total = 1  # Positive (all-facets-match) images per query; additional from same facet bucket
+query_plan_neg_total = 8  # neg_hard + neg_easy
 query_plan_neg_hard = 4
 query_plan_neg_nearmiss = 4
 query_plan_neg_easy = 4
+query_plan_neutral_total = 4  # Neutral (one facet off; may be judged positive or negative)
 query_plan_random_seed = 42
 query_plan_seed_image_ids_column = "seed_image_ids"
 query_plan_candidate_image_ids_column = "candidate_image_ids"
