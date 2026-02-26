@@ -218,36 +218,41 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
     """
     Query plan strategy based on tag overlap and facet matching.
     
-    Selects negative candidate images for each query using a three-tier approach:
-    - Hard negatives: Images matching core facets with high tag overlap (difficult to distinguish)
-    - Near-miss negatives: Images matching most facets but differing on one (similar but wrong)
-    - Easy negatives: Images with low tag overlap and different core facets (clearly different)
+    Selects positive (all-facets-match), neutral (one-facet-off), and negative candidate
+    images for each query:
+    - Positives: Images matching all core facets (seed + additional from same bucket).
+    - Hard negatives: Images matching core facets with high tag overlap (difficult to distinguish).
+    - Neutral: Images matching most facets but differing on one (may be judged positive or negative).
+    - Easy negatives: Images with low tag overlap and different core facets (clearly different).
     
     Uses diversity constraints to ensure variety in selected candidates.
     """
     
     def __init__(
         self,
+        pos_total: Optional[int] = None,
         neg_total: Optional[int] = None,
         neg_hard: Optional[int] = None,
-        neg_nearmiss: Optional[int] = None,
         neg_easy: Optional[int] = None,
+        neutral_total: Optional[int] = None,
         random_seed: Optional[int] = None,
     ) -> None:
         """
         Initialize TagOverlapQueryPlan strategy.
         
         Args:
-            neg_total: Total number of negative candidates per query.
+            pos_total: Total number of positive (all-facets-match) candidate images per query.
+            neg_total: Total number of negative candidates per query (neg_hard + neg_easy).
             neg_hard: Number of hard negative candidates (matching core facets, high tag overlap).
-            neg_nearmiss: Number of near-miss negative candidates (one facet off).
             neg_easy: Number of easy negative candidates (low tag overlap, different facets).
+            neutral_total: Number of neutral candidates (one facet off; can be judged positive or negative).
             random_seed: Random seed for reproducible candidate selection.
         """
+        self.pos_total = pos_total
         self.neg_total = neg_total
         self.neg_hard = neg_hard
-        self.neg_nearmiss = neg_nearmiss
         self.neg_easy = neg_easy
+        self.neutral_total = neutral_total
         self.random_seed = random_seed
 
     def build(self, annotations: Dict[str, ImageRec], seeds_path: Path, config: BenchmarkConfig) -> List[Dict[str, Any]]:
@@ -256,10 +261,11 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
         
         For each query defined in seeds_path:
         1. Derives a profile from seed images (common facets and tags)
-        2. Selects hard negatives: images matching core facets with high tag overlap
-        3. Selects near-miss negatives: images matching most facets but differing on one
-        4. Selects easy negatives: images with low tag overlap and different core facets
-        5. Combines seed images and negatives into candidate list
+        2. Expands positives: seed + (pos_total - 1) from same core-facet bucket
+        3. Selects hard negatives: images matching core facets with high tag overlap
+        4. Selects neutral candidates: images matching most facets but differing on one
+        5. Selects easy negatives: images with low tag overlap and different core facets
+        6. Combines positives and negatives into candidate list
         
         Uses diversity constraints to limit selections per diversity key and ensures
         no image is selected multiple times for the same query.
@@ -272,22 +278,27 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
         Returns:
             List of dictionaries, each with:
             - query_id: Query identifier
-            - seed_image_ids: List of seed image IDs for the query
-            - candidate_image_ids: List of candidate image IDs (seeds + negatives)
+            - seed_image_ids: List of positive image IDs for the query (seed + additional from same facet bucket)
+            - candidate_image_ids: List of candidate image IDs (positives + negatives + neutrals)
             
         Raises:
             ValueError: If negative counts are not properly configured or don't sum correctly.
         """
+        pos_total = self.pos_total if self.pos_total is not None else getattr(config, "query_plan_pos_total", None)
+        if pos_total is None:
+            pos_total = 1
+        if pos_total < 1:
+            raise ValueError("query_plan_pos_total must be >= 1")
         neg_total = self.neg_total if self.neg_total is not None else config.query_plan_neg_total
         neg_hard = self.neg_hard if self.neg_hard is not None else config.query_plan_neg_hard
-        neg_nearmiss = self.neg_nearmiss if self.neg_nearmiss is not None else config.query_plan_neg_nearmiss
         neg_easy = self.neg_easy if self.neg_easy is not None else config.query_plan_neg_easy
+        neutral_total = self.neutral_total if self.neutral_total is not None else config.query_plan_neutral_total
         random_seed = self.random_seed if self.random_seed is not None else config.query_plan_random_seed
 
-        if None in (neg_total, neg_hard, neg_nearmiss, neg_easy):
-            raise ValueError("neg_total, neg_hard, neg_nearmiss, neg_easy must be set on strategy or config")
-        if neg_hard + neg_nearmiss + neg_easy != neg_total:
-            raise ValueError("hard + nearmiss + easy must equal total")
+        if None in (neg_total, neg_hard, neg_easy, neutral_total):
+            raise ValueError("neg_total, neg_hard, neg_easy, neutral_total must be set on strategy or config")
+        if neg_hard + neg_easy != neg_total:
+            raise ValueError("neg_hard + neg_easy must equal neg_total")
 
         rng = random.Random(random_seed or 42)
         all_ids = list(annotations.keys())
@@ -340,6 +351,20 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
             core_bucket = []
             if core_keys:
                 core_bucket = idx_core[tuple(prof.get(k) for k in core_keys)]
+
+            # Expand positives: seed + (pos_total - 1) from same core-facet bucket
+            positive_ids = list(valid_seed_ids)
+            if pos_total > len(positive_ids) and core_bucket:
+                pool = [r for r in core_bucket if r.image_id not in positive_ids]
+                need = min(pos_total - len(positive_ids), len(pool))
+                if pool and need > 0:
+                    pos_scored = score_candidates_by_tags(pool, seed_tags)
+                    extra = pick_with_diversity(pos_scored, need, already, diversity_facets, max_per_divkey=6)
+                    for iid in extra:
+                        positive_ids.append(iid)
+                        already.add(iid)
+            already = set(positive_ids)
+
             hard_scored = score_candidates_by_tags(core_bucket, seed_tags)
             hard_ids = pick_with_diversity(hard_scored, neg_hard, already, diversity_facets, max_per_divkey=6)
 
@@ -357,21 +382,21 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
                         pick_with_diversity(rs_scored, neg_hard - len(hard_ids), already, diversity_facets, max_per_divkey=6)
                     )
 
-            near_candidates: List[ImageRec] = []
+            neutral_candidates: List[ImageRec] = []
             if core_keys:
                 for off in off_keys:
                     base = [r for r in annotations.values() if one_facet_off(r, prof, core_keys, off_key=off)]
-                    near_candidates.extend(base)
+                    neutral_candidates.extend(base)
 
-            near_map = {r.image_id: r for r in near_candidates}
-            near_scored = score_candidates_by_tags(list(near_map.values()), seed_tags)
-            near_ids = pick_with_diversity(near_scored, neg_nearmiss, already, diversity_facets, max_per_divkey=5)
+            neutral_map = {r.image_id: r for r in neutral_candidates}
+            neutral_scored = score_candidates_by_tags(list(neutral_map.values()), seed_tags)
+            neutral_ids = pick_with_diversity(neutral_scored, neutral_total, already, diversity_facets, max_per_divkey=5)
 
-            if len(near_ids) < neg_nearmiss and core_keys:
+            if len(neutral_ids) < neutral_total and core_keys:
                 relax = [r for r in annotations.values() if r.facets.get(core_keys[0]) == prof.get(core_keys[0])]
                 relax_scored = score_candidates_by_tags(relax, seed_tags)
-                near_ids.extend(
-                    pick_with_diversity(relax_scored, neg_nearmiss - len(near_ids), already, diversity_facets, max_per_divkey=5)
+                neutral_ids.extend(
+                    pick_with_diversity(relax_scored, neutral_total - len(neutral_ids), already, diversity_facets, max_per_divkey=5)
                 )
 
             easy_pool = []
@@ -403,17 +428,18 @@ class TagOverlapQueryPlan(QueryPlanStrategy):
                     easy_ids.append(iid)
                     already.add(iid)
 
-            negatives = hard_ids[:neg_hard] + near_ids[:neg_nearmiss] + easy_ids[:neg_easy]
-            if len(negatives) != neg_total:
-                missing = neg_total - len(negatives)
+            negatives = hard_ids[:neg_hard] + neutral_ids[:neutral_total] + easy_ids[:neg_easy]
+            total_neg_and_neutral = neg_hard + neutral_total + neg_easy
+            if len(negatives) != total_neg_and_neutral:
+                missing = total_neg_and_neutral - len(negatives)
                 fallback = [iid for iid in all_ids if iid not in already]
                 rng.shuffle(fallback)
                 negatives.extend(fallback[:missing])
 
-            candidate_ids = list(valid_seed_ids) + negatives
+            candidate_ids = list(positive_ids) + negatives
             rows_out.append({
                 config.column_query_id: query_id,
-                config.query_plan_seed_image_ids_column: valid_seed_ids,
+                config.query_plan_seed_image_ids_column: positive_ids,
                 config.query_plan_candidate_image_ids_column: candidate_ids,
             })
 
