@@ -200,10 +200,11 @@ class BenchmarkConfig:
         query_plan_core_facets: List of core facet names for query planning.
         query_plan_off_facets: List of off-facet names for query planning.
         query_plan_diversity_facets: List of diversity facet names for query planning.
-        query_plan_neg_total: Total number of negative examples per query.
+        query_plan_pos_total: Total number of positive (all-facets-match) candidate images per query. Includes the seed; additional positives are drawn from the same core-facet bucket.
+        query_plan_neg_total: Total number of negative examples per query (neg_hard + neg_easy).
         query_plan_neg_hard: Number of hard negative examples per query.
-        query_plan_neg_nearmiss: Number of near-miss negative examples per query.
         query_plan_neg_easy: Number of easy negative examples per query.
+        query_plan_neutral_total: Number of neutral candidates per query (one facet off; may be judged positive or negative).
         query_plan_random_seed: Random seed for reproducible query planning.
         log_level: Logging level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
     """
@@ -268,10 +269,11 @@ class BenchmarkConfig:
     query_plan_core_facets: List[str] = field(default_factory=list)
     query_plan_off_facets: List[str] = field(default_factory=list)
     query_plan_diversity_facets: List[str] = field(default_factory=list)
+    query_plan_pos_total: Optional[int] = None
     query_plan_neg_total: Optional[int] = None
     query_plan_neg_hard: Optional[int] = None
-    query_plan_neg_nearmiss: Optional[int] = None
     query_plan_neg_easy: Optional[int] = None
+    query_plan_neutral_total: Optional[int] = None
     query_plan_random_seed: Optional[int] = None
 
     # image URL configuration
@@ -469,6 +471,13 @@ class BenchmarkConfig:
         judge_config = judge_config_class(**judge_config_data) if judge_config_data else judge_config_class()
         similarity_config = similarity_config_class(**similarity_config_data) if similarity_config_data else similarity_config_class()
         
+        # Reject deprecated query_plan_neg_nearmiss
+        if "query_plan_neg_nearmiss" in data:
+            raise ValueError(
+                "query_plan_neg_nearmiss is deprecated and no longer accepted; "
+                "use query_plan_neutral_total instead."
+            )
+
         # Validate and raise error for invalid fields in BenchmarkConfig
         field_names = {f.name for f in fields(cls)}
         invalid_fields = set(data.keys()) - field_names
