@@ -252,10 +252,11 @@ def run_query_plan(
     seeds_jsonl: Optional[Path] = None,
     out_query_plan_jsonl: Optional[Path] = None,
     config: Optional[BenchmarkConfig] = None,
+    pos_total: Optional[int] = None,
     neg_total: Optional[int] = None,
     neg_hard: Optional[int] = None,
-    neg_nearmiss: Optional[int] = None,
     neg_easy: Optional[int] = None,
+    neutral_total: Optional[int] = None,
     random_seed: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -266,10 +267,11 @@ def run_query_plan(
         seeds_jsonl: Input seeds JSONL path. If None, uses config.seeds_jsonl.
         out_query_plan_jsonl: Output query plan JSONL path. If None, uses config.query_plan_jsonl.
         config: BenchmarkConfig instance. If None, uses DEFAULT_BENCHMARK_CONFIG.
-        neg_total: Total negatives. If None, uses config.query_plan_neg_total.
+        pos_total: Total positive (all-facets-match) images per query. If None, uses config.query_plan_pos_total (default 1).
+        neg_total: Total negatives (neg_hard + neg_easy). If None, uses config.query_plan_neg_total.
         neg_hard: Hard negatives. If None, uses config.query_plan_neg_hard.
-        neg_nearmiss: Nearmiss negatives. If None, uses config.query_plan_neg_nearmiss.
         neg_easy: Easy negatives. If None, uses config.query_plan_neg_easy.
+        neutral_total: Neutral candidates (one facet off). If None, uses config.query_plan_neutral_total.
         random_seed: Random seed. If None, uses config.query_plan_random_seed.
     
     Returns:
@@ -291,10 +293,11 @@ def run_query_plan(
     
     annotations = load_annotations(annotations_jsonl, config)
     strategy = TagOverlapQueryPlan(
+        pos_total=pos_total or getattr(config, "query_plan_pos_total", None),
         neg_total=neg_total or config.query_plan_neg_total,
         neg_hard=neg_hard or config.query_plan_neg_hard,
-        neg_nearmiss=neg_nearmiss or config.query_plan_neg_nearmiss,
         neg_easy=neg_easy or config.query_plan_neg_easy,
+        neutral_total=neutral_total or config.query_plan_neutral_total,
         random_seed=random_seed or config.query_plan_random_seed,
     )
     return build_query_plan(annotations, seeds_jsonl, strategy, out_query_plan_jsonl, config)
