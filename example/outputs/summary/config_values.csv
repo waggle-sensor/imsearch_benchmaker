@@ -57,9 +57,10 @@ query_plan_diversity_facets,[],list
 query_plan_jsonl,/Volumes/data/outputs/query_plan.jsonl,str
 query_plan_neg_easy,4,int
 query_plan_neg_hard,4,int
-query_plan_neg_nearmiss,4,int
-query_plan_neg_total,12,int
+query_plan_neg_total,8,int
+query_plan_neutral_total,4,int
 query_plan_num_seeds,100,int
+query_plan_pos_total,1,int
 query_plan_off_facets,[],list
 query_plan_random_seed,42,int
 query_plan_seed_image_ids_column,seed_image_ids,str
